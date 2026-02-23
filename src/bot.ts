@@ -219,7 +219,7 @@ client.on(GatewayDispatchEvents.TypingStart, async ({ data: message, api }) => {
       signal: AbortSignal.timeout(1_500),
     });
   } catch (err) {
-    console.error(`Failed to timeout user ${message.user_id} for typing in honeypot channel: ${err}`);
+    console.log(`Failed to timeout user for typing in honeypot channel: ${err}`);
     if (err instanceof Error && !["AbortError", "TimeoutError"].includes(err.name)) {
       failedToTimeoutMembers.push(`${message.guild_id}-${message.user_id}`);
       if (failedToTimeoutMembers.length > 100) {
