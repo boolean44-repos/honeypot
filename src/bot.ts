@@ -638,12 +638,10 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         try {
           await channelWarmerExperiment(guildId, newConfig.honeypot_channel_id!)
         } catch (err) {
-          if (newConfig.log_channel_id) {
-            return await api.channels.createMessage(newConfig.log_channel_id, {
-              content: `There was a problem sending a message to the <#${newConfig.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
-              allowed_mentions: {},
-            });
-          }
+          await api.channels.createMessage(newConfig.log_channel_id || newConfig.honeypot_channel_id, {
+            content: `There was a problem sending a message to the <#${newConfig.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
+            allowed_mentions: {},
+          });
         }
       }
       if (
@@ -653,12 +651,10 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         try {
           await randomChannelNameExperiment(guildId, newConfig.honeypot_channel_id!, newConfig.experiments.includes("random-channel-name-chaos"))
         } catch (err) {
-          if (newConfig.log_channel_id) {
-            return await api.channels.createMessage(newConfig.log_channel_id, {
-              content: `There was a problem updating the <#${newConfig.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
-              allowed_mentions: {},
-            });
-          }
+          return await api.channels.createMessage(newConfig.log_channel_id || newConfig.honeypot_channel_id, {
+            content: `There was a problem updating the <#${newConfig.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+            allowed_mentions: {},
+          });
         }
       }
       return;
@@ -1009,7 +1005,11 @@ runAtMidnightUTC(async () => {
         await channelWarmerExperiment(config.guild_id, config.honeypot_channel_id!);
         await Bun.sleep(1_000);
       } catch (err) {
-        console.log(`Channel warmer experiment execution failed for guild: ${err}`);
+        console.log(`Channel warmer experiment execution failed: ${err}`);
+        await client.api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id!, {
+          content: `There was a problem sending a message to the <#${config.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
+          allowed_mentions: {},
+        });
       }
     }
   };
@@ -1027,7 +1027,11 @@ runAtMidnightUTC(async () => {
         )
         await Bun.sleep(1_000);
       } catch (err) {
-        console.log(`Random channel name experiment execution failed for guild: ${err}`);
+        console.log(`Random channel name experiment execution failed: ${err}`);
+        await client.api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id!, {
+          content: `There was a problem updating the <#${config.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+          allowed_mentions: {},
+        });
       }
     }
   };
