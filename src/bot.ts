@@ -31,7 +31,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const rest = new REST({ version: "10" }).setToken(token);
 const gateway = new WebSocketManager({
   token,
-  intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages | GatewayIntentBits.GuildMessageTyping,
+  intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
   rest,
   shardCount: null,
   initialPresence: {
@@ -185,51 +185,9 @@ client.on(GatewayDispatchEvents.MessageDeleteBulk, async ({ data: message, api }
   }
 });
 
-// guildId-userId, to prevent retrying to timeout members if the API fails (ie due to permissions)
-const failedToTimeoutMembers = [] as `${string}-${string}`[];
-const typingNotEnabledGuilds = [] as string[];
 const notHoneypottedChannelIds = [] as string[];
-client.on(GatewayDispatchEvents.TypingStart, async ({ data: message, api }) => {
-  if (!message.guild_id || message.member?.user.bot) return;
-  if (failedToTimeoutMembers.includes(`${message.guild_id}-${message.user_id}`)) return;
-  if (notHoneypottedChannelIds.includes(message.channel_id)) return;
-  if (typingNotEnabledGuilds.includes(message.guild_id)) return;
-
-  const config = await getConfig(message.guild_id);
-  if (!config || !config.experiments.includes("timeout-for-typing")) {
-    typingNotEnabledGuilds.push(message.guild_id);
-    if (typingNotEnabledGuilds.length > 100) {
-      typingNotEnabledGuilds.shift();
-    }
-    return;
-  };
-  if (message.channel_id !== config.honeypot_channel_id) {
-    notHoneypottedChannelIds.push(message.channel_id);
-    if (notHoneypottedChannelIds.length > 100) {
-      notHoneypottedChannelIds.shift();
-    }
-    return;
-  };
-
-  try {
-    await api.guilds.editMember(message.guild_id, message.user_id, {
-      communication_disabled_until: new Date(Date.now() + 10_000).toISOString(),
-    }, {
-      reason: "User is typing in the honeypot channel (timeout-for-typing experiment)",
-      signal: AbortSignal.timeout(1_500),
-    });
-  } catch (err) {
-    console.log(`Failed to timeout user for typing in honeypot channel: ${err}`);
-    if (err instanceof Error && !["AbortError", "TimeoutError"].includes(err.name)) {
-      failedToTimeoutMembers.push(`${message.guild_id}-${message.user_id}`);
-      if (failedToTimeoutMembers.length > 100) {
-        failedToTimeoutMembers.shift();
-      }
-    }
-  }
-});
-
 const failedToDmUsers = [] as string[]; // userIds, to prevent retrying to DM users if the API fails (ie due to DMs closed)
+
 client.on(GatewayDispatchEvents.MessageCreate, async ({ data: message, api }) => {
   if (!message.guild_id) return;
   if (message.interaction_metadata && message.author.id !== applicationId) {
@@ -492,7 +450,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
               options: [
                 { label: "No Warning Msg", value: "no-warning-msg", description: "Don’t include a warning message in the #honeypot channel", default: config.experiments.includes("no-warning-msg") },
                 { label: "No DM", value: "no-dm", description: "Don’t DM the user that they triggered the honeypot", default: config.experiments.includes("no-dm") },
-                { label: "Timeout for Typing", value: "timeout-for-typing", description: "Timeout users (for 10sec) who are typing in the honeypot channel", default: config.experiments.includes("timeout-for-typing") },
+                // { label: "Timeout for Typing", value: "timeout-for-typing", description: "Timeout users (for 10sec) who are typing in the honeypot channel", default: config.experiments.includes("timeout-for-typing") },
                 { label: "Channel Warmer", value: "channel-warmer", description: "Keep the honeypot channel active (every day)", default: config.experiments.includes("channel-warmer") },
                 { label: "Random Channel Name", value: "random-channel-name", description: "Randomize the honeypot channel name (every day)", default: config.experiments.includes("random-channel-name") },
                 { label: "Random Channel Name (Chaos)", value: "random-channel-name-chaos", description: "Randomise the honeypot channel name with random characters (every day)", default: config.experiments.includes("random-channel-name-chaos") },
@@ -535,7 +493,7 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         if (c.type === ComponentType.StringSelect) {
           if (c.custom_id === "honeypot_experiments" && Array.isArray(c.values)) {
             for (const val of c.values) {
-              if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer", "timeout-for-typing"].includes(val)) {
+              if (["no-warning-msg", "no-dm", "random-channel-name", "random-channel-name-chaos", "channel-warmer"].includes(val)) {
                 newConfig.experiments.push(val as any);
               }
             }
@@ -598,24 +556,6 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
         if (usingChannelNameExperiment && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.ManageChannels)) {
           await api.interactions.reply(interaction.id, interaction.token, {
             content: `I need the Manage Channels permission to enable the "Random Channel Name" experiment.\n-# No settings have been changed.`,
-            allowed_mentions: {},
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-
-        const usingTimeoutForTypingExperiment = newConfig.experiments.includes("timeout-for-typing");
-        if (usingTimeoutForTypingExperiment && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.ModerateMembers)) {
-          await api.interactions.reply(interaction.id, interaction.token, {
-            content: `I need the Moderate Members permission to enable the "Timeout for Typing" experiment.\n-# No settings have been changed.`,
-            allowed_mentions: {},
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-        if (usingTimeoutForTypingExperiment && memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.ModerateMembers)) {
-          await api.interactions.reply(interaction.id, interaction.token, {
-            content: `You need the Moderate Members permission to enable the "Timeout for Typing" experiment.\n-# No settings have been changed.`,
             allowed_mentions: {},
             flags: MessageFlags.Ephemeral,
           });
@@ -742,7 +682,6 @@ client.on(GatewayDispatchEvents.InteractionCreate, async ({ data: interaction, a
       // a somewhat trigger to reset
       notHoneypottedChannelIds.length = 0;
       failedToDmUsers.length = 0;
-      failedToTimeoutMembers.length = 0;
       return;
     }
 
