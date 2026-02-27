@@ -18,7 +18,9 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
 });
 
-const redis = Bun.redis;
+const getRedis = () => new Bun.RedisClient(process.env.REDIS_URL!)
+const redis = getRedis();
+const redisBlocking = getRedis(); // separate connection for blocking so it doesnt interfere with the main one
 const rest = new REST().setToken(token!);
 
 const getShards = async () => (await rest.get(Routes.gatewayBot()) as RESTGetAPIGatewayBotResult).shards;
@@ -64,7 +66,7 @@ let wsConfig = {} as { events?: string[], messageEvents?: { sendBotEvents?: bool
     if (raw) wsConfig = JSON.parse(raw)
 
     while (1) {
-        const raw = await redis.blpop("discord_ws_status_", 0)
+        const raw = await redisBlocking.blpop("discord_ws_status_", 0)
         if (raw) wsConfig = JSON.parse(raw[1])
     }
 })();

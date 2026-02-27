@@ -25,8 +25,9 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 
-
-const redis = Bun.redis;
+const getRedis = () => new Bun.RedisClient(process.env.REDIS_URL!)
+const redis = getRedis();
+const redisBlocking = getRedis(); // separate connection for blocking so it doesnt interfere with the main one
 const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
 const api = new API(rest);
 
@@ -47,7 +48,7 @@ const listen = async () => {
             await Bun.sleep(300);
             // continue;
         }
-        const rawEvent = (await redis.blpop("discord_events", 0));
+        const rawEvent = (await redisBlocking.blpop("discord_events", 0));
         if (!rawEvent) continue;
         const event = JSON.parse(rawEvent[1]) as GatewayDispatchPayload;
 
