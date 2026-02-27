@@ -28,7 +28,7 @@ const getManager = (shards: number | null = null) => new WebSocketManager({
     token: token,
     intents: GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages,
     rest,
-    compression: CompressionMethod.ZlibNative,
+    compression: process.env.COMPRESS_WEBSOCKETS === "true" ? CompressionMethod.ZlibNative : null,
     shardCount: shards,
     initialPresence: initialPresence,
 });
