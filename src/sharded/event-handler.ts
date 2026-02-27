@@ -41,7 +41,7 @@ const listen = async () => {
     redis.set("discord_ws_config", wsConfig)
     redis.lpush("discord_ws_config_", wsConfig)
 
-    while (1) {
+    while (1) try {
         if (currentlyRunning > 50) {
             console.warn(`Currently running ${currentlyRunning} event handlers, waiting 300ms to hopefully not infinitely overload server...`);
             await Bun.sleep(300);
@@ -71,6 +71,8 @@ const listen = async () => {
                 console.error("Event not handled:", event.t);
             }
         }
+    } catch (err) {
+        console.error("Error in event handler loop:", err);
     }
 };
 
