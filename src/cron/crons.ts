@@ -23,7 +23,7 @@ export const runCrons = (api: API | API2, db: typeof import("../utils/db")) => {
     for (const cron of crons) {
         if (cron.frequency === CronFrequency.Daily) {
             const now = new Date();
-            const millisUntilMidnight = new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1).getTime() - now.getTime();
+            const millisUntilMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - now.getTime();
             setTimeout(() => {
                 cron.run(api, db).catch(err => {
                     console.log(`Error running cron ${cron.name}: ${err}`);
