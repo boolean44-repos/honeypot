@@ -70,15 +70,15 @@ services:
 
    redis:
     image: redis:alpine
-    restart: always
-    command: ["sh", "-c", "redis-server --port 0 --unixsocket /redis/redis.sock --unixsocketperm 777"]
+    restart: unless-stopped
+    command: ["sh", "-c", "redis-server --port 0 --unixsocket /redis/redis.sock --unixsocketperm 777 --maxmemory 64mb --maxmemory-policy allkeys-lru --activedefrag yes"]
     volumes:
       - redis-data:/data
       - redis:/redis
     deploy:
       resources:
         limits:
-          memory: 64M
+          memory: 80M
         reservations:
           memory: 8M
       update_config:

@@ -25,9 +25,11 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 
-const getRedis = () => new Bun.RedisClient(process.env.REDIS_URL!)
+const getRedis = (c?: Bun.RedisOptions) => new Bun.RedisClient(process.env.REDIS_URL!, c);
 const redis = getRedis();
-const redisBlocking = getRedis(); // separate connection for blocking so it doesnt interfere with the main one
+// separate connection for blocking so it doesnt interfere with the main one
+const redisBlocking = getRedis({ connectionTimeout: 1000, maxRetries: 1 });
+
 const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
 const api = new API(rest);
 
