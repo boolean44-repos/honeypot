@@ -2,7 +2,7 @@ import { GatewayDispatchEvents, type APIMessage } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import { addFailedToDmUser, couldBeHoneypotChannel, getGuildInfo, hasFailedToDmUser, setHoneypotChannel } from "../utils/cache";
+import { couldBeHoneypotChannel, getDmChannelCache, getGuildInfo, setDmChannelCache, setHoneypotChannelCache } from "../utils/cache";
 import { CUSTOM_EMOJI_ID } from "../utils/constants";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
 
@@ -41,7 +41,7 @@ const onMessage = async (
         const config = await db.getConfig(guildId);
         if (!config || !config.action) return;
         if (channelId !== config.honeypot_channel_id) {
-            if (redis && config.honeypot_channel_id) setHoneypotChannel(guildId, config.honeypot_channel_id!, redis);
+            if (redis && config.honeypot_channel_id) setHoneypotChannelCache(guildId, config.honeypot_channel_id!, redis);
             return;
         }
 
@@ -62,11 +62,28 @@ const onMessage = async (
         // should DM user first before banning so that discord has less reason to block it
         let dmMessage: APIMessage | null = null;
         let isOwner = false;
-        try {
+        noDm: try {
             const timeout = AbortSignal.timeout(2500);
             let guild = await getGuildInfo(api, guildId, timeout, redis).catch(() => null);
             isOwner = guild?.ownerId === userId;
-            if (!config.experiments.includes("no-dm") || await hasFailedToDmUser(userId, redis)) {
+            if (!config.experiments.includes("no-dm")) {
+                let dmChannel = await getDmChannelCache(userId, redis);
+                // false means we know for sure we can’t DM them, null means we haven’t tried yet and true-ish string means we have a DM channel cached
+                if (dmChannel === false) break noDm;
+                if (!dmChannel) {
+                    try {
+                        const { id } = await api.users.createDM(userId, { signal: timeout });
+                        dmChannel = id;
+                    } catch (err) {
+                        console.log(`Failed to create DM channel with user: ${err}`);
+                        if (err instanceof Error && !["AbortError", "TimeoutError"].includes(err.name)) {
+                            setDmChannelCache(userId, false, redis);
+                        }
+                        break noDm;
+                    }
+                    // over here to if any redis error not count as failed to DM since it’s just a cache
+                    setDmChannelCache(userId, dmChannel, redis);
+                }
                 const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
                 const dmContent = honeypotUserDMMessage(
                     config.action,
@@ -76,15 +93,11 @@ const onMessage = async (
                     isOwner,
                     customMessages?.dm_message
                 );
-                const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
                 dmMessage = await api.channels.createMessage(dmChannel, dmContent, { signal: timeout })
             }
         } catch (err) {
             /* Ignore DM errors (user has DMs closed, etc.) */
             console.log(`Failed to send DM to user: ${err}`)
-            if (err instanceof Error && !["AbortError", "TimeoutError"].includes(err.name)) {
-                addFailedToDmUser(userId, redis);
-            }
         }
 
         let failed = false;

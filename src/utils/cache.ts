@@ -37,31 +37,34 @@ export const invalidateGuildInfoCache = (guildId: string, redis?: Bun.RedisClien
   }
 }
 
-const daySeconds = 24 * 60 * 60;
+const weekSeconds = 7 * 24 * 60 * 60;
 
-const faildToDmUsers = [] as string[];
-export const addFailedToDmUser = (userId: string, redis?: Bun.RedisClient) => {
+const failedToDmUsers = [] as string[];
+export const setDmChannelCache = (userId: string, channelId: string | false, redis?: Bun.RedisClient) => {
   if (redis) {
-    redis.set(`failed_to_dm:${userId}`, '1', "EX", daySeconds);
-  } else {
-    if (!faildToDmUsers.includes(userId)) {
-      faildToDmUsers.unshift(userId);
-      if (faildToDmUsers.length > 100) {
-        faildToDmUsers.pop();
+    redis.set(`user_dm_channel:${userId}`, channelId || 'false', "EX", weekSeconds);
+  } else if (channelId === false) {
+    if (!failedToDmUsers.includes(userId)) {
+      failedToDmUsers.unshift(userId);
+      if (failedToDmUsers.length > 100) {
+        failedToDmUsers.pop();
       }
     }
   }
 }
-export const hasFailedToDmUser = async (userId: string, redis?: Bun.RedisClient) => {
+/** Returns DM channel ID, `false` if failed to DM, or `null` if not cached  */
+export const getDmChannelCache = async (userId: string, redis?: Bun.RedisClient) => {
   if (redis) {
-    const val = await redis.get(`failed_to_dm:${userId}`);
-    return val === '1';
+    const val = await redis.get(`user_dm_channel:${userId}`);
+    return val === 'false' ? false : val;
   } else {
-    return faildToDmUsers.includes(userId);
+    return failedToDmUsers.includes(userId) ? false : null;
   }
 }
 
-export const setHoneypotChannel = (guildId: string, channelId: string, redis: Bun.RedisClient) => {
+const daySeconds = 24 * 60 * 60;
+
+export const setHoneypotChannelCache = (guildId: string, channelId: string, redis: Bun.RedisClient) => {
   redis.set(`honeypot_channel:${guildId}`, channelId, "EX", daySeconds);
 }
 /** Returns `true`/`false` if cache hit and is/isnt honeypot channel, `null` if not cached  */
@@ -72,6 +75,6 @@ export const couldBeHoneypotChannel = async (guildId: string, channelId: string,
   return null;
 
 }
-export const removeGuildHoneypotChannel = (guildId: string, redis: Bun.RedisClient) => {
+export const removeGuildHoneypotChannelCache = (guildId: string, redis: Bun.RedisClient) => {
   redis.del(`honeypot_channel:${guildId}`);
 }

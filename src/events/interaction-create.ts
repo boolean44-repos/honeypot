@@ -5,7 +5,7 @@ import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotU
 import { channelWarmerExperiment, randomChannelNameExperiment } from "../cron/experiments";
 import getBadWords from "../utils/bad-words.macro" with { type: "macro" };
 import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID } from "../utils/constants";
-import { getGuildInfo, setHoneypotChannel } from "../utils/cache";
+import { getGuildInfo, setHoneypotChannelCache } from "../utils/cache";
 
 const hasPermission = (permissions: bigint, permission: bigint) => (permissions & permission) === permission;
 
@@ -289,7 +289,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: **${newConfig.action}**${newConfig.experiments.length > 0 ? `\n-# - Experiments: ${newConfig.experiments.map(e => `\`${e}\``).join(", ")}` : ''}`,
                     allowed_mentions: {},
                 });
-                if (redis) setHoneypotChannel(guildId, newConfig.honeypot_channel_id, redis);
+                if (redis) setHoneypotChannelCache(guildId, newConfig.honeypot_channel_id, redis);
 
                 if (msgId && prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
                     await api.channels.deleteMessage(

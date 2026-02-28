@@ -3,7 +3,7 @@ import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
 import { honeypotWarningMessage } from "../utils/messages";
-import { setGuildInfoCache, setHoneypotChannel } from "../utils/cache";
+import { setGuildInfoCache, setHoneypotChannelCache } from "../utils/cache";
 
 const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
     event: GatewayDispatchEvents.GuildCreate,
@@ -32,7 +32,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
                 action: 'softban',
                 experiments: [],
             });
-            if (redis) channelId && setHoneypotChannel(guild.id, channelId, redis);
+            if (redis) channelId && setHoneypotChannelCache(guild.id, channelId, redis);
             if (!setupSuccess && !config && guild.system_channel_id) {
                 try {
                     await api.channels.createMessage(guild.system_channel_id, {
