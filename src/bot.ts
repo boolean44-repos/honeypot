@@ -1,11 +1,11 @@
 import { Client } from "@discordjs/core";
 import { REST } from "@discordjs/rest";
 import { WebSocketManager } from "@discordjs/ws";
-import { GatewayIntentBits, PresenceUpdateStatus, ActivityType, GatewayDispatchEvents } from "discord-api-types/v10";
-import { initDb } from "./utils/db";
+import { GatewayIntentBits, GatewayDispatchEvents } from "discord-api-types/v10";
+import * as db from "./utils/db";
 import eventHandlers from "./events/events";
 import { commandsPayload } from "./utils/commands";
-import { runCron } from "./cron/experiments";
+import { runCrons } from "./cron/crons";
 import initialPresence from "./utils/initial-presence";
 
 const token = process.env.DISCORD_TOKEN;
@@ -14,7 +14,8 @@ let applicationId = atob(process.env.DISCORD_TOKEN?.split(".")[0]!); // i bet mo
 
 process.title = "Honeypot Bot (riskymh.dev)";
 
-await initDb();
+await db.initDb();
+const redis = process.env.REDIS_URL ? new Bun.RedisClient(process.env.REDIS_URL) : null;
 
 process.on('uncaughtException', (err) => {
     console.error(`Unhandled Exception: ${err}`);
@@ -39,7 +40,7 @@ for (const event of eventHandlers) {
     client.on(event.event, async (data: any) => {
         try {
             // @ts-expect-error - types are weird
-            await event.handler({ data: data.data, api: data.api, applicationId });
+            await event.handler({ data: data.data, api: data.api, applicationId, redis, db });
         } catch (err) {
             console.error(`Error handling event ${event.event}:`, err);
         }
@@ -49,11 +50,11 @@ for (const event of eventHandlers) {
 client.once(GatewayDispatchEvents.Ready, (c) => {
     console.info(`[Shard ${c.shardId}] ${c.data.user.username}#${c.data.user.discriminator} is ready!`);
     applicationId = c.data.user.id;
-    
+
 
     c.api.applicationCommands.bulkOverwriteGlobalCommands(c.data.user.id, commandsPayload);
 });
 
 gateway.connect();
 
-runCron(client.api);
+runCrons(client.api, db);

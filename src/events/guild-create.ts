@@ -1,18 +1,17 @@
 import { ChannelType, GatewayDispatchEvents, type GatewayGuildCreateDispatchData } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
-import { guildCache } from "../utils/cache";
-import { getConfig, getModeratedCount, setConfig } from "../utils/db";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
 import { honeypotWarningMessage } from "../utils/messages";
+import { setGuildInfoCache, setHoneypotChannel } from "../utils/cache";
 
 const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
     event: GatewayDispatchEvents.GuildCreate,
-    handler: async ({ data: guild, api, applicationId }) => {
+    handler: async ({ data: guild, api, applicationId, redis, db }) => {
         try {
-            guildCache.set(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code });
+            setGuildInfoCache(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code }, redis);
 
-            let config = await getConfig(guild.id);
+            let config = await db.getConfig(guild.id);
             if (config?.action === "disabled" || config) return;
 
             let channelId = null as null | string;
@@ -20,12 +19,12 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
             let setupSuccess = false;
             try {
                 channelId ||= await findOrCreateHoneypotChannel(api, guild);
-                msgId ||= await postWarning(api, channelId, applicationId!, await getModeratedCount(guild.id));
+                msgId ||= await postWarning(api, channelId, applicationId!, (config as any | undefined)?.action || "softban", await db.getModeratedCount(guild.id));
                 setupSuccess = true;
             } catch (err) {
                 console.log(`Failed to create/send honeypot message: ${err}`);
             }
-            await setConfig({
+            await db.setConfig({
                 guild_id: guild.id,
                 honeypot_channel_id: channelId,
                 honeypot_msg_id: msgId,
@@ -33,6 +32,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
                 action: 'softban',
                 experiments: [],
             });
+            if (redis) channelId && setHoneypotChannel(guild.id, channelId, redis);
             if (!setupSuccess && !config && guild.system_channel_id) {
                 try {
                     await api.channels.createMessage(guild.system_channel_id, {
@@ -64,11 +64,9 @@ async function findOrCreateHoneypotChannel(api: API | API2, guild: GatewayGuildC
 }
 
 
-async function postWarning(api: API | API2, channelId: string, applicationId: string, moderatedCount = 0) {
+async function postWarning(api: API | API2, channelId: string, applicationId: string, action = "softban" as const, moderatedCount = 0) {
     const messages = await api.channels.getMessages(channelId, { limit: 100 }).catch(() => []);
     const botMessages = messages.filter(m => m.author?.id === applicationId);
-    let config = await getConfig(channelId).catch(() => null);
-    const action = config?.action || 'softban';
 
     if (botMessages.length > 0) {
         const [first, ...rest] = botMessages;

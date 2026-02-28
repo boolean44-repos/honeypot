@@ -9,6 +9,7 @@ services:
      environment:
        DATABASE_URL: ${DATABASE_URL:-sqlite:///data/honeypot.sqlite}
        DISCORD_TOKEN: ${DISCORD_TOKEN:?REQUIRED}
+       REDIS_URL: ${REDIS_URL} # optional
        NODE_ENV: production
        FORCE_COLOR: 1
      volumes:

@@ -2,17 +2,13 @@ import { GatewayDispatchEvents, type APIMessage } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import { getGuildInfo } from "../utils/cache";
+import { addFailedToDmUser, couldBeHoneypotChannel, getGuildInfo, hasFailedToDmUser, setHoneypotChannel } from "../utils/cache";
 import { CUSTOM_EMOJI_ID } from "../utils/constants";
-import { getConfig, getHoneypotMessages, logModerateEvent, getModeratedCount } from "../utils/db";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
-
-// userIds, to prevent retrying to DM users if the API fails (ie due to DMs closed)
-export const failedToDmUsers = [] as string[];
 
 const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
     event: GatewayDispatchEvents.MessageCreate,
-    handler: async ({ data: message, api, applicationId }) => {
+    handler: async ({ data: message, api, applicationId, redis, db }) => {
         if (!message.guild_id) return;
         if (message.interaction_metadata && message.author.id !== applicationId) {
             return await onMessage({
@@ -20,7 +16,7 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
                 channelId: message.channel_id,
                 guildId: message.guild_id,
                 messageId: message.id
-            }, api);
+            }, api, db, redis);
         }
 
         if (message.author.bot) return;
@@ -29,15 +25,25 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
             channelId: message.channel_id,
             guildId: message.guild_id,
             messageId: message.id
-        }, api);
+        }, api, db, redis);
     }
 };
 
-const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string }, api: API | API2) => {
+const onMessage = async (
+    { userId, channelId, guildId, messageId, threadId }: { userId: string, channelId: string, guildId: string, messageId?: string, threadId?: string },
+    api: API | API2,
+    db: typeof import("../utils/db"),
+    redis?: Bun.RedisClient
+) => {
     try {
-        const config = await getConfig(guildId);
+        if (redis && (await couldBeHoneypotChannel(guildId, channelId, redis)) === false) return;
+
+        const config = await db.getConfig(guildId);
         if (!config || !config.action) return;
-        if (channelId !== config.honeypot_channel_id) return
+        if (channelId !== config.honeypot_channel_id) {
+            if (redis && config.honeypot_channel_id) setHoneypotChannel(guildId, config.honeypot_channel_id!, redis);
+            return;
+        }
 
         // just for the fun of it to acknowledge it saw the message
         let emojiReact = null as null | Promise<any>
@@ -51,16 +57,16 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
 
         if (config.action === 'disabled') return;
 
-        const customMessages = await getHoneypotMessages(guildId);
+        const customMessages = await db.getHoneypotMessages(guildId);
 
         // should DM user first before banning so that discord has less reason to block it
         let dmMessage: APIMessage | null = null;
         let isOwner = false;
         try {
             const timeout = AbortSignal.timeout(2500);
-            let guild = await getGuildInfo(api, guildId, timeout).catch(() => null);
+            let guild = await getGuildInfo(api, guildId, timeout, redis).catch(() => null);
             isOwner = guild?.ownerId === userId;
-            if (!config.experiments.includes("no-dm") || failedToDmUsers.includes(userId)) {
+            if (!config.experiments.includes("no-dm") || await hasFailedToDmUser(userId, redis)) {
                 const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
                 const dmContent = honeypotUserDMMessage(
                     config.action,
@@ -77,10 +83,7 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
             /* Ignore DM errors (user has DMs closed, etc.) */
             console.log(`Failed to send DM to user: ${err}`)
             if (err instanceof Error && !["AbortError", "TimeoutError"].includes(err.name)) {
-                failedToDmUsers.push(userId);
-                if (failedToDmUsers.length > 100) {
-                    failedToDmUsers.shift();
-                }
+                addFailedToDmUser(userId, redis);
             }
         }
 
@@ -134,10 +137,10 @@ const onMessage = async ({ userId, channelId, guildId, messageId, threadId }: { 
             // server owner cannot be banned/kicked by anyone
             failed = false
         };
-        if (!failed && !isOwner) await logModerateEvent(guildId, userId);
+        if (!failed && !isOwner) await db.logModerateEvent(guildId, userId);
 
         if (config.honeypot_msg_id && !config.experiments.includes("no-warning-msg")) try {
-            const moderatedCount = await getModeratedCount(guildId);
+            const moderatedCount = await db.getModeratedCount(guildId);
             await api.channels.editMessage(
                 config.honeypot_channel_id,
                 config.honeypot_msg_id,

@@ -1,15 +1,15 @@
 import { ButtonStyle, ChannelType, ComponentType, GatewayDispatchEvents, InteractionType, MessageFlags, PermissionFlagsBits, SelectMenuDefaultValueType, TextInputStyle, type APIModalInteractionResponseCallbackData, type RESTPostAPIChannelMessageJSONBody } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
-import { getConfig, type HoneypotConfig, getModeratedCount, getHoneypotMessages, setConfig, setHoneypotMessages, getStats, getUserModeratedCount } from "../utils/db";
+import type { HoneypotConfig } from "../utils/db";
 import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotUserDMMessage, defaultLogActionMessage, honeypotUserDMMessage } from "../utils/messages";
 import { channelWarmerExperiment, randomChannelNameExperiment } from "../cron/experiments";
 import getBadWords from "../utils/bad-words.macro" with { type: "macro" };
 import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID } from "../utils/constants";
-import { getGuildInfo } from "../utils/cache";
+import { getGuildInfo, setHoneypotChannel } from "../utils/cache";
 
 const hasPermission = (permissions: bigint, permission: bigint) => (permissions & permission) === permission;
 
-const badWords = getBadWords() as any as string[];
+const badWords = getBadWords() as any as Awaited<ReturnType<typeof getBadWords>>;
 const containsBadWord = (text: string): string | null => {
     const inputWords = text.toLowerCase().replace(/[^a-z0-9]/gi, ' ').split(/\W+/).filter(Boolean);
     return inputWords.find(word => badWords.includes(word)) || null;
@@ -18,13 +18,13 @@ const containsBadWord = (text: string): string | null => {
 
 const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
     event: GatewayDispatchEvents.InteractionCreate,
-    handler: async ({ data: interaction, api, applicationId }) => {
+    handler: async ({ data: interaction, api, applicationId, redis, db }) => {
         const guildId = interaction.guild_id;
 
         try {
             // slash command handler: show modal
             if (guildId && interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot") {
-                let config = await getConfig(guildId);
+                let config = await db.getConfig(guildId);
                 config ||= {
                     guild_id: guildId,
                     honeypot_channel_id: null,
@@ -155,7 +155,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     return;
                 }
 
-                const prevConfig = await getConfig(guildId);
+                const prevConfig = await db.getConfig(guildId);
                 const honeypotChanged = newConfig.honeypot_channel_id !== prevConfig?.honeypot_channel_id;
                 const logChanged = newConfig.log_channel_id !== prevConfig?.log_channel_id;
                 const actionChanged = newConfig.action !== prevConfig?.action;
@@ -214,8 +214,8 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 let msgId: string | null = null;
                 if (!newConfig.experiments.includes("no-warning-msg")) {
                     try {
-                        const count = await getModeratedCount(guildId);
-                        const customMessages = await getHoneypotMessages(guildId);
+                        const count = await db.getModeratedCount(guildId);
+                        const customMessages = await db.getHoneypotMessages(guildId);
                         const messageBody = honeypotWarningMessage(count, newConfig.action, customMessages?.warning_message);
                         if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
                             const msg = await api.channels.createMessage(
@@ -278,7 +278,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     }
                 }
 
-                await setConfig({
+                await db.setConfig({
                     ...(prevConfig || {}),
                     ...newConfig,
                     honeypot_msg_id: (newConfig.experiments.includes("no-warning-msg") && !newConfig.honeypot_msg_id)
@@ -289,6 +289,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     content: `Honeypot config updated!\n-# - Channel: <#${newConfig.honeypot_channel_id}>\n-# - Log Channel: ${newConfig.log_channel_id ? `<#${newConfig.log_channel_id}>` : '*(Not set)*'}\n-# - Action: **${newConfig.action}**${newConfig.experiments.length > 0 ? `\n-# - Experiments: ${newConfig.experiments.map(e => `\`${e}\``).join(", ")}` : ''}`,
                     allowed_mentions: {},
                 });
+                if (redis) setHoneypotChannel(guildId, newConfig.honeypot_channel_id, redis);
 
                 if (msgId && prevConfig?.honeypot_msg_id && prevConfig?.honeypot_channel_id) {
                     await api.channels.deleteMessage(
@@ -327,7 +328,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
             // slash command handler: show modal
             if (guildId && interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "honeypot-messages") {
-                let config = await getHoneypotMessages(guildId);
+                let config = await db.getHoneypotMessages(guildId);
 
                 const modal: APIModalInteractionResponseCallbackData = {
                     title: "Honeypot's Messages",
@@ -400,7 +401,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
             // modal submit handler: update config from modal values
             else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_messages_modal`) {
-                const newMessages: Awaited<ReturnType<typeof getHoneypotMessages>> = {
+                const newMessages: Awaited<ReturnType<typeof db.getHoneypotMessages>> = {
                     dm_message: null,
                     warning_message: null,
                     log_message: null,
@@ -446,10 +447,10 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     return;
                 }
 
-                const config = await getConfig(guildId);
+                const config = await db.getConfig(guildId);
                 if (config?.honeypot_channel_id && config?.honeypot_msg_id) {
                     try {
-                        const guildModeratedCount = await getModeratedCount(guildId);
+                        const guildModeratedCount = await db.getModeratedCount(guildId);
                         await api.channels.editMessage(
                             config.honeypot_channel_id,
                             config.honeypot_msg_id,
@@ -517,15 +518,15 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     allowed_mentions: {},
                 } as RESTPostAPIChannelMessageJSONBody);
 
-                const existingMessages = await getHoneypotMessages(guildId);
-                await setHoneypotMessages(guildId, newMessages);
+                const existingMessages = await db.getHoneypotMessages(guildId);
+                await db.setHoneypotMessages(guildId, newMessages);
 
                 if (newMessages.dm_message && existingMessages?.dm_message !== newMessages.dm_message) {
                     const timeout = AbortSignal.timeout(10_000);
                     const userId = (interaction.user || interaction.member?.user)?.id;
                     if (userId) {
                         try {
-                            const server = await getGuildInfo(api, guildId, timeout);
+                            const server = await getGuildInfo(api, guildId, timeout, redis);
                             const { id: dmChannel } = await api.users.createDM(userId, { signal: timeout });
                             await api.channels.createMessage(
                                 dmChannel,
@@ -551,9 +552,9 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
             // dm command to show stats
             else if (interaction.type === InteractionType.ApplicationCommand && interaction.data.name === "stats") {
-                const { totalGuilds, totalModerated } = await getStats();
+                const { totalGuilds, totalModerated } = await db.getStats();
                 const userId = (interaction.user || interaction.member?.user)?.id
-                const userModeratedCount = userId ? await getUserModeratedCount(userId) : 0;
+                const userModeratedCount = userId ? await db.getUserModeratedCount(userId) : 0;
 
                 await api.interactions.reply(interaction.id, interaction.token, {
                     flags: MessageFlags.IsComponentsV2,

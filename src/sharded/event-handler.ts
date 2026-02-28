@@ -2,8 +2,8 @@ import { GatewayDispatchEvents, type GatewayDispatchPayload } from "discord-api-
 import eventHandlers from "../events/events";
 import { API } from "@discordjs/core/http-only";
 import { REST } from "@discordjs/rest";
-import { initDb } from "../utils/db";
-import { runCron } from "../cron/experiments";
+import * as db from "../utils/db";
+import { runCrons } from "../cron/crons";
 import { commandsPayload } from "../utils/commands";
 
 
@@ -14,7 +14,7 @@ let applicationId = atob(process.env.DISCORD_TOKEN?.split(".")[0]!); // i bet mo
 
 process.title = "Honeypot Bot (riskymh.dev) - Event Handler Worker";
 
-await initDb();
+await db.initDb();
 
 process.on('uncaughtException', (err) => {
     console.error(`Unhandled Exception: ${err}`);
@@ -60,7 +60,7 @@ const listen = async () => {
                     (async () => {
                         try {
                             // @ts-expect-error - types are weird
-                            await h({ data: event.d, api, applicationId });
+                            await h({ data: event.d, api, applicationId, redis, db });
                         } catch (err) {
                             console.error(`Error handling event ${event.t}:`, err);
                         } finally {
@@ -81,7 +81,7 @@ const listen = async () => {
 function getEventMap() {
     const eventMap = {} as {
         [K in GatewayDispatchEvents]: ((
-            listener: { data: (Extract<GatewayDispatchPayload, { t: K }>["d"]), api: API, applicationId: string }
+            listener: { data: (Extract<GatewayDispatchPayload, { t: K }>["d"]), api: API, applicationId: string, redis: Bun.RedisClient, db: typeof import("../utils/db") }
         ) => Promise<void> | void)[];
     };
     for (const event of eventHandlers) {
@@ -98,6 +98,6 @@ listen();
 
 // todo: consider this better because if this has replicas, then each instance will run the cron...
 if (process.env.REPLICA_ID === "1" || !process.env.REPLICA_ID) {
-    runCron(api);
+    runCrons(api, db);
     api.applicationCommands.bulkOverwriteGlobalCommands(applicationId, commandsPayload);
 }

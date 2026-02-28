@@ -8,7 +8,9 @@ export type EventHandler<K extends GatewayDispatchEvents = GatewayDispatchEvents
     handler: (listener: {
         data: (Extract<GatewayDispatchPayload, { t: K }>["d"]),
         api: API | API2,
-        applicationId: string
+        applicationId: string,
+        redis?: Bun.RedisClient,
+        db: typeof import("../utils/db")
     }) => Promise<any>;
 };
 

@@ -9,7 +9,7 @@
     "dev": "bun --watch src/bot.ts",
     "build:standalone": "bun build src/bot.ts --outfile dist/bot --minify --target=bun --bytecode --production --compile --format=esm --sourcemap",
     "docker:build": "docker compose build",
-    "docker:deploy": "docker compose pull && docker compose up -d",
+    "docker:deploy": "docker stack ls --format '{{.Name}}' | grep -q '^honeypot$' && { echo 'Error: Stack exists'; false; } || { docker compose pull && docker compose up -d; }",
     "docker:logs": "docker compose logs -f",
     "-": "echo --spacer--",
     "build:events:standalone": "bun build src/sharded/event-handler.ts --outfile dist/event-handler --minify --target=bun --bytecode --production --compile --format=esm --sourcemap",
@@ -28,9 +28,9 @@
     "@discordjs/core": "^2.4.0",
     "@discordjs/rest": "^2.6.0",
     "@discordjs/ws": "^2.0.4",
-    "discord-api-types": "^0.38.39"
+    "discord-api-types": "^0.38.40"
   },
   "overrides": {
-    "discord-api-types": "^0.38.39"
+    "discord-api-types": "^0.38.40"
   }
 }
