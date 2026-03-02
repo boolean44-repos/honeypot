@@ -51,7 +51,6 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
     console.info(`[Shard ${c.shardId}] ${c.data.user.username}#${c.data.user.discriminator} is ready!`);
     applicationId = c.data.user.id;
 
-
     c.api.applicationCommands.bulkOverwriteGlobalCommands(c.data.user.id, commandsPayload);
 });
 

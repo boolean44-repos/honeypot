@@ -66,7 +66,7 @@ let wsConfig = {} as { events?: string[], messageEvents?: { sendBotEvents?: bool
     if (raw) wsConfig = JSON.parse(raw)
 
     while (1) {
-        const raw = await redisBlocking.blpop("discord_ws_status_", 0)
+        const raw = await redisBlocking.blpop("discord_ws_config_", 0)
         if (raw) wsConfig = JSON.parse(raw[1])
     }
 })();
@@ -74,12 +74,12 @@ let wsConfig = {} as { events?: string[], messageEvents?: { sendBotEvents?: bool
 
 function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean {
     if (!wsConfig.events) return true;
-    if (!wsConfig.events.includes(event.t)) return false;
-    if (wsConfig.messageEvents?.sendBotEvents === false) {
+    else if (!wsConfig.events.includes(event.t)) return false;
+    else if (wsConfig.messageEvents?.sendBotEvents === false) {
         // deletes dont contain any info other than ids, so we can allow them to go through even for bot messages without worrying about extra bot events getting through
         // at least bot msg deletes aren't as common, and also we need it to know if someone removed out honeypot warning msg anyway
         if ((event.t === GatewayDispatchEvents.MessageCreate || event.t === GatewayDispatchEvents.MessageUpdate) && event.d?.author?.bot) return false;
-        if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
+        else if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
     }
     return true;
 }
