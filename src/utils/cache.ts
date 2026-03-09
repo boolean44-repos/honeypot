@@ -24,7 +24,8 @@ export const getGuildInfo = async (api: API | API2, guildId: string, signal?: Ab
 };
 export const setGuildInfoCache = (guildId: string, info: GuildInfo, redis?: Bun.RedisClient) => {
   if (redis) {
-    redis.hsetex("guild_info", "EX", yearSeconds, "FIELDS", 1, guildId, JSON.stringify(info));
+    const cacheStr = JSON.stringify({ name: info.name, ownerId: info.ownerId, vanityInviteCode: info.vanityInviteCode || undefined })
+    redis.hsetex("guild_info", "EX", yearSeconds, "FIELDS", 1, guildId, cacheStr);
   } else {
     guildCache.set(guildId, info);
   }
