@@ -61,7 +61,7 @@ const cron: Cron = {
                 } catch (err) {
                     console.log(`Channel warmer experiment execution failed: ${err}`);
                     await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id!, {
-                        content: `There was a problem sending a message to the <#${config.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
+                        content: `⚠️ There was a problem sending a message to the <#${config.honeypot_channel_id}> channel for the "Channel Warmer" experiment. Please check my permissions.`,
                         allowed_mentions: {},
                     });
                 }
@@ -84,7 +84,7 @@ const cron: Cron = {
                 } catch (err) {
                     console.log(`Random channel name experiment execution failed: ${err}`);
                     await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id!, {
-                        content: `There was a problem updating the <#${config.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
+                        content: `⚠️ There was a problem updating the <#${config.honeypot_channel_id}> channel for the "Random Channel Name" experiment. Please check my permissions.`,
                         allowed_mentions: {},
                     });
                 }

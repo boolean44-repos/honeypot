@@ -62,27 +62,15 @@ const onMessage = async (
         // should DM user first before banning so that discord has less reason to block it
         let dmMessage: APIMessage | null = null;
         let isOwner = false;
-        noDm: try {
+        try {
             const timeout = AbortSignal.timeout(2500);
-            let guild = await getGuildInfo(api, guildId, timeout, redis).catch(() => null);
+            const guild = await getGuildInfo(api, guildId, timeout, redis).catch(() => null);
             isOwner = guild?.ownerId === userId;
             if (!config.experiments.includes("no-dm")) {
-                let dmChannel = await getDmChannelCache(userId, redis);
-                // false means we know for sure we can’t DM them, null means we haven’t tried yet and true-ish string means we have a DM channel cached
-                if (dmChannel === false) break noDm;
+                let dmChannel = redis && await getDmChannelCache(userId, redis);
                 if (!dmChannel) {
-                    try {
-                        const { id } = await api.users.createDM(userId, { signal: timeout });
-                        dmChannel = id;
-                    } catch (err) {
-                        console.log(`Failed to create DM channel with user: ${err}`);
-                        if (err instanceof Error && !["AbortError", "TimeoutError"].includes(err.name)) {
-                            setDmChannelCache(userId, false, redis);
-                        }
-                        break noDm;
-                    }
-                    // over here to if any redis error not count as failed to DM since it’s just a cache
-                    setDmChannelCache(userId, dmChannel, redis);
+                    ({ id: dmChannel } = await api.users.createDM(userId, { signal: timeout }));
+                    if (redis) setDmChannelCache(userId, dmChannel, redis);
                 }
                 const link = `https://discord.com/channels/${guildId}/${channelId}/${config.honeypot_msg_id || messageId || ""}`;
                 const dmContent = honeypotUserDMMessage(
@@ -118,8 +106,8 @@ const onMessage = async (
                     { delete_message_seconds: 3600 },
                     { reason: "Triggered honeypot -> softban (kick) 1/4" }
                 );
-                // maybe discord needs time to yeet their messages?
-                await Bun.sleep(5_000)
+                // maybe discord needs time to delete their messages?
+                await Bun.sleep(150)
                 await api.guilds.unbanUser(
                     guildId,
                     userId,
@@ -127,51 +115,49 @@ const onMessage = async (
                 );
 
                 // double unban setup? surely this gotta yeet them now??
-                await Bun.sleep(500)
-                await api.guilds.banUser(
-                    guildId,
-                    userId,
-                    { delete_message_seconds: 3600 },
-                    { reason: "Triggered honeypot -> softban (kick) 3/4" }
-                );
-                await Bun.sleep(5_000)
-                await api.guilds.unbanUser(
-                    guildId,
-                    userId,
-                    { reason: "Triggered honeypot -> softban (kick) 4/4" }
-                );
+                try {
+                    // dont wait on this for too long
+                    const timeout = AbortSignal.timeout(10_000);
+                    await Bun.sleep(1000)
+                    await api.guilds.banUser(
+                        guildId,
+                        userId,
+                        { delete_message_seconds: 3600 },
+                        { reason: "Triggered honeypot -> softban (kick) 3/4", signal: timeout }
+                    );
+                    await Bun.sleep(150)
+                    await api.guilds.unbanUser(
+                        guildId,
+                        userId,
+                        { reason: "Triggered honeypot -> softban (kick) 4/4", signal: timeout }
+                    );
+                } catch (err) {
+                    console.log(`Failed to double softban user (probably not an issue): ${err}`);
+                }
             } else {
                 console.error("Unknown action in honeypot config:", config.action);
+                failed = true;
             }
         } catch (err) {
             console.log(`Failed to ${config.action} user: ${err}`);
             failed = true;
         } else {
             // server owner cannot be banned/kicked by anyone
-            failed = false
+            failed = true;
         };
         if (!failed && !isOwner) await db.logModerateEvent(guildId, userId);
-
-        if (config.honeypot_msg_id && !config.experiments.includes("no-warning-msg")) try {
-            const moderatedCount = await db.getModeratedCount(guildId);
-            await api.channels.editMessage(
-                config.honeypot_channel_id,
-                config.honeypot_msg_id,
-                honeypotWarningMessage(moderatedCount, config.action, customMessages?.warning_message)
-            );
-        } catch (err) { console.log(`Failed to update honeypot message: ${err}`); }
 
         try {
             if (config.log_channel_id && !failed && !isOwner) {
                 await api.channels.createMessage(config.log_channel_id,
                     logActionMessage(userId, config.honeypot_channel_id, config.action, customMessages?.log_message)
                 );
-            } else if (isOwner && !config.experiments.includes("no-warning-msg")) {
+            } else if (isOwner) {
                 await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
                     content: `⚠️ User <@${userId}> triggered the honeypot, but they are the **server owner** so I cannot ${config.action} them.\n-# In anycase **ensure my role is higher** than people’s highest role and that I have **ban members** permission so I can ${config.action} for actual cases.`,
                     // allowed_mentions: {},
                 });
-            } else if (failed && !config.experiments.includes("no-warning-msg")) {
+            } else if (failed) {
                 await api.channels.createMessage(config.log_channel_id || config.honeypot_channel_id, {
                     content: `⚠️ User <@${userId}> triggered the honeypot, but I **failed** to ${config.action} them.\n-# Please check my permissions to **ensure my role is higher** than their highest role and that I have **ban members** permission.`,
                     allowed_mentions: {},
@@ -182,6 +168,16 @@ const onMessage = async (
             // somewhat chance the channel is deleted or the bot lost perms to send messages there
             console.log(`Failed to send log message (MessageCreate handler): ${err}`);
         }
+
+        if (config.honeypot_msg_id && !config.experiments.includes("no-warning-msg")) try {
+            const moderatedCount = await db.getModeratedCount(guildId);
+            await api.channels.editMessage(
+                config.honeypot_channel_id,
+                config.honeypot_msg_id,
+                honeypotWarningMessage(moderatedCount, config.action, customMessages?.warning_message)
+            );
+        } catch (err) { console.log(`Failed to update honeypot message: ${err}`); }
+
     } catch (err) {
         console.error(`Error with MessageCreate handler: ${err}`);
     }
