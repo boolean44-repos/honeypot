@@ -75,10 +75,14 @@ let wsConfig = {} as { events?: string[], messageEvents?: { sendBotEvents?: bool
 function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean {
     if (!wsConfig.events) return true;
     else if (!wsConfig.events.includes(event.t)) return false;
+    // TODO: the better solution to this is to have a redis list of "subscribed" channels instead of arbitrarily removing high trafic events
     else if (wsConfig.messageEvents?.sendBotEvents === false) {
         // deletes dont contain any info other than ids, so we can allow them to go through even for bot messages without worrying about extra bot events getting through
-        // at least bot msg deletes aren't as common, and also we need it to know if someone removed out honeypot warning msg anyway
-        if ((event.t === GatewayDispatchEvents.MessageCreate || event.t === GatewayDispatchEvents.MessageUpdate) && event.d?.author?.bot) return false;
+        // at least bot msg deletes aren't as common and also we need it to know if someone removed out honeypot warning msg anyway
+        if (event.t === GatewayDispatchEvents.MessageCreate || event.t === GatewayDispatchEvents.MessageUpdate) {
+            // bot messages are somewhat often from logging so we limit it, but if it was slash command type we want as we associate the msg with the user who ran
+            if (event.d?.author?.bot && !event.d?.interaction_metadata) return false;
+        }
         else if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
     }
     return true;
