@@ -45,15 +45,12 @@ const dispatchEvent = async (event: GatewayDispatchPayload, shardId: number, sha
     // dont send duplicate events during resharding,
     // but in normal operation, no need to waste io hashing events, just send them all
     if (isResharding) {
-        const hash = `${event.t}:${Bun.hash(JSON.stringify(event.d))}`;
-        if (await Bun.redis.exists(hash)) {
-            return false;
-        }
-        /* doesnt need await */ Bun.redis.setex(hash, 60, "1");
+        const key = `${event.t}:${Bun.hash(JSON.stringify(event.d))}`;
+        const inserted = await redis.hsetex("shard_dedupe", "FNX", "EX", 60, "FIELDS", 1, key, "1");
+        if (inserted === 0) return false; // it didn't insert, thus it already exists and we should ignore this event
     }
 
-    const shouldbroadcast = shouldBroadcastEvent(event)
-    if (shouldbroadcast) {
+    if (shouldBroadcastEvent(event)) {
         await redis.lpush("discord_events", JSON.stringify(event));
     }
 }
@@ -134,6 +131,6 @@ console.log(`Starting WebSocket Manager with ${shardCount} shards...`);
 await manager.connect();
 
 
-setInterval(checkForResharding, 24 * 60 * 60 * 1000); // every day
+setInterval(checkForResharding, 12 * 60 * 60 * 1000); // twice every day
 
 
