@@ -187,9 +187,17 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     const memberPerms = interaction.member?.permissions
                     const banEvents = ["ban", "softban"];
                     // check ban permissions even if the action didn’t change, because any new channel moved to can suddenly ban people
-                    if ((actionChanged || true) && banEvents.includes(newConfig.action) && memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.BanMembers)) {
+                    if (banEvents.includes(newConfig.action) && memberPerms && !hasPermission(BigInt(memberPerms), PermissionFlagsBits.BanMembers)) {
                         await api.interactions.reply(interaction.id, interaction.token, {
                             content: `You need the Ban Members permission to set the honeypot action to "${newConfig.action}".\n-# No settings have been changed.`,
+                            allowed_mentions: {},
+                            flags: MessageFlags.Ephemeral,
+                        });
+                        return;
+                    }
+                    if (banEvents.includes(newConfig.action) && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.BanMembers)) {
+                        await api.interactions.reply(interaction.id, interaction.token, {
+                            content: `I need the Ban Members permission to set the honeypot action to "${newConfig.action}".\n-# No settings have been changed.`,
                             allowed_mentions: {},
                             flags: MessageFlags.Ephemeral,
                         });
