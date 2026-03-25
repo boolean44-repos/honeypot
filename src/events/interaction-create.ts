@@ -20,6 +20,9 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
     event: GatewayDispatchEvents.InteractionCreate,
     handler: async ({ data: interaction, api, applicationId, redis, db }) => {
         const guildId = interaction.guild_id;
+        const userId = interaction.member?.user.id || interaction.user?.id;
+        if (!userId) return console.error("No user ID found in interaction, skipping????");
+        const userContextHash = Bun.hash(guildId + applicationId + userId).toString(16);
 
         try {
             // slash command handler: show modal
@@ -36,7 +39,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                 const modal: APIModalInteractionResponseCallbackData = {
                     title: "Honeypot",
-                    custom_id: `honeypot_config_modal`,
+                    custom_id: `honeypot_config_modal:${userContextHash}`,
                     components: [
                         {
                             type: ComponentType.Label,
@@ -110,7 +113,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
             }
 
             // modal submit handler: update config from modal values
-            else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_config_modal`) {
+            else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_config_modal:${userContextHash}`) {
                 const newConfig: HoneypotConfig = {
                     guild_id: guildId,
                     honeypot_channel_id: null,
@@ -340,7 +343,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                 const modal: APIModalInteractionResponseCallbackData = {
                     title: "Honeypot's Messages",
-                    custom_id: `honeypot_messages_modal`,
+                    custom_id: `honeypot_messages_modal:${userContextHash}`,
                     components: [
                         {
                             type: ComponentType.TextDisplay,
@@ -408,7 +411,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
             }
 
             // modal submit handler: update config from modal values
-            else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_messages_modal`) {
+            else if (guildId && interaction.type === InteractionType.ModalSubmit && interaction.data.custom_id === `honeypot_messages_modal:${userContextHash}`) {
                 const newMessages: Awaited<ReturnType<typeof db.getHoneypotMessages>> = {
                     dm_message: null,
                     warning_message: null,
