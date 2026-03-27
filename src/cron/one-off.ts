@@ -1,10 +1,10 @@
 import { getDeleteMessageCache, removeFromDeleteMessageCache } from "../utils/cache";
-import { CronFrequency, type Cron } from "./crons";
+import type { Cron } from "./crons";
 
 
 const cron: Cron = {
     name: "One-off message removal",
-    frequency: CronFrequency.Once,
+    frequency: "once",
     run: async (api, db, redis) => {
         if (redis) {
             const messagesToDelete = await getDeleteMessageCache(redis);

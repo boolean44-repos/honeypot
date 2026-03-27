@@ -3,7 +3,7 @@ import type { API as API2 } from "@discordjs/core/http-only";
 import { MessageFlags } from "discord-api-types/v10";
 import randomChannelNames from "../utils/random-channel-names.yaml";
 import { CUSTOM_EMOJI } from "../utils/constants";
-import { CronFrequency, type Cron } from "./crons";
+import type { Cron } from "./crons";
 
 
 export async function channelWarmerExperiment(api: API | API2, guildId: string, channelId: string) {
@@ -46,7 +46,7 @@ export async function randomChannelNameExperiment(api: API | API2, guildId: stri
 
 const cron: Cron = {
     name: "Experiment Runner",
-    frequency: CronFrequency.Daily,
+    frequency: "daily",
     run: async (api, db) => {
         // intentionally only run one at a time with delay to avoid rate limits (as least important feature)
 
