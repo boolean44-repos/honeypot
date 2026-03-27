@@ -7,6 +7,7 @@ import eventHandlers from "./events/events";
 import { commandsPayload } from "./utils/commands";
 import { runCrons } from "./cron/crons";
 import initialPresence from "./utils/initial-presence";
+import { setCommandIdCache } from "./utils/cache";
 
 const token = process.env.DISCORD_TOKEN;
 if (!token) throw new Error("DISCORD_TOKEN environment variable not set.");
@@ -51,9 +52,12 @@ client.once(GatewayDispatchEvents.Ready, (c) => {
     console.info(`[Shard ${c.shardId}] ${c.data.user.username}#${c.data.user.discriminator} is ready!`);
     applicationId = c.data.user.id;
 
-    c.api.applicationCommands.bulkOverwriteGlobalCommands(c.data.user.id, commandsPayload);
+    c.api.applicationCommands.bulkOverwriteGlobalCommands(applicationId, commandsPayload).then((cmds) => {
+        const commandIdMap = cmds.reduce((acc, cmd) => { acc[cmd.name] = cmd.id; return acc; }, {} as Record<string, string>);
+        setCommandIdCache(commandIdMap, redis)
+    });
 });
 
 gateway.connect();
 
-runCrons(client.api, db);
+runCrons(client.api, db, redis || undefined);

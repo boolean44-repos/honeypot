@@ -5,7 +5,7 @@ import { honeypotWarningMessage, defaultHoneypotWarningMessage, defaultHoneypotU
 import { channelWarmerExperiment, randomChannelNameExperiment } from "../cron/experiments";
 import getBadWords from "../utils/bad-words.macro" with { type: "macro" };
 import { CUSTOM_EMOJI, CUSTOM_EMOJI_ID } from "../utils/constants";
-import { getGuildInfo, setHoneypotChannelCache } from "../utils/cache";
+import { getGuildInfo, removeFromDeleteMessageCache, setHoneypotChannelCache } from "../utils/cache";
 
 const hasPermission = (permissions: bigint, permission: bigint) => (permissions & permission) === permission;
 
@@ -617,6 +617,23 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     ]
                 });
             }
+
+            // into welcome command to allow early deleting
+            else if (guildId && interaction.type === InteractionType.MessageComponent && interaction.data.custom_id === "delete_into_message") {
+                if (!interaction.member?.permissions || !hasPermission(BigInt(interaction.member.permissions), PermissionFlagsBits.ManageMessages)) {
+                    await api.interactions.reply(interaction.id, interaction.token, {
+                        content: "You need the Manage Messages permission to delete this message.",
+                        allowed_mentions: {},
+                        flags: MessageFlags.Ephemeral,
+                    });
+                    return;
+                }
+
+                await api.channels.deleteMessage(interaction.message.channel_id, interaction.message.id).catch(() => null);
+                await api.interactions.deferMessageUpdate(interaction.id, interaction.token).catch(() => null);
+                if (redis) removeFromDeleteMessageCache(interaction.message.channel_id, interaction.message.id, redis).catch(() => null);
+            }
+
 
             return;
         } catch (err) {

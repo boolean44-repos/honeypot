@@ -63,3 +63,39 @@ export const couldBeHoneypotChannel = async (guildId: string, channelId: string,
 export const removeGuildHoneypotChannelCache = (guildId: string, redis: Bun.RedisClient) => {
   redis.hdel("honeypot_channel", guildId);
 }
+
+
+// to delete messages (from sending nice into msg in honeypot channel) to ensure its cleaned up even cross-restarts
+export const addToDeleteMessageCache = (channelId: string, messageId: string, redis: Bun.RedisClient) => {
+  return redis.sadd("delete_message", `${channelId}:${messageId}`);
+}
+export const getDeleteMessageCache = async (redis: Bun.RedisClient) => {
+  const entries = await redis.smembers("delete_message");
+  return entries.map(e => {
+    const [channelId, messageId] = e.split(":");
+    return { channelId, messageId };
+  });
+}
+export const removeFromDeleteMessageCache = (channelId: string, messageId: string, redis: Bun.RedisClient) => {
+  return redis.srem("delete_message", `${channelId}:${messageId}`);
+}
+
+// set command cache
+let commandIdMapCache = null as null | Record<string, string>;
+export const setCommandIdCache = (commandIdMap: Record<string, string>, redis?: Bun.RedisClient | null) => {
+  if (redis) {
+    redis.set("command_id_map", JSON.stringify(commandIdMap));
+  } else {
+    commandIdMapCache = commandIdMap;
+  }
+}
+export const getCommandIdCache = async (redis?: Bun.RedisClient | null) => {
+  if (!redis) return commandIdMapCache;
+  const raw = await redis.get("command_id_map");
+  if (!raw) return null;
+  return JSON.parse(raw) as Record<string, string>;
+}
+export const invalidateCommandIdCache = (redis: Bun.RedisClient | null) => {
+  redis?.del("command_id_map");
+  commandIdMapCache = null;
+}

@@ -5,6 +5,7 @@ import { REST } from "@discordjs/rest";
 import * as db from "../utils/db";
 import { runCrons } from "../cron/crons";
 import { commandsPayload } from "../utils/commands";
+import { setCommandIdCache } from "../utils/cache";
 
 
 const token = process.env.DISCORD_TOKEN;
@@ -100,6 +101,9 @@ listen();
 
 // todo: consider this better because if this has replicas, then each instance will run the cron...
 if (process.env.REPLICA_ID === "1" || !process.env.REPLICA_ID) {
-    runCrons(api, db);
-    api.applicationCommands.bulkOverwriteGlobalCommands(applicationId, commandsPayload);
+    runCrons(api, db, redis);
+    api.applicationCommands.bulkOverwriteGlobalCommands(applicationId, commandsPayload).then((cmds) => {
+        const commandIdMap = cmds.reduce((acc, cmd) => { acc[cmd.name] = cmd.id; return acc; }, {} as Record<string, string>);
+        setCommandIdCache(commandIdMap, redis)
+    });
 }
