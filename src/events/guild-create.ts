@@ -4,6 +4,7 @@ import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
 import { honeypotWarningMessage } from "../utils/messages";
 import { addToDeleteMessageCache, getCommandIdCache, removeFromDeleteMessageCache, setGuildInfoCache, setHoneypotChannelCache } from "../utils/cache";
+import randomChannelNames from "../utils/random-channel-names.yaml";
 
 const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
     event: GatewayDispatchEvents.GuildCreate,
@@ -103,6 +104,10 @@ async function sendIntoMessage(api: API | API2, redis: Bun.RedisClient | undefin
 
     const removalTime = 2.5 * 60 * 1000;
     const inDiscordTimeString = `<t:${Math.floor((Date.now() + removalTime) / 1000)}:R>`;
+
+    const randomNames = Array.isArray(randomChannelNames) ? randomChannelNames : ["dont-type-here"]
+    const newName = randomNames[Math.floor(Math.random() * randomNames.length)];
+
     const { id: msgId } = await api.channels.createMessage(channelId, {
         flags: MessageFlags.SuppressNotifications | MessageFlags.IsComponentsV2,
         components: [
@@ -113,7 +118,7 @@ async function sendIntoMessage(api: API | API2, redis: Bun.RedisClient | undefin
 - By default, any user that sends a message in this channel will be **automatically softbanned** (banned and instantly unbanned to delete last 1hr messages)
 - You can customise this and more with the ${getCommandMention("honeypot")} command and the custom messages it sends with ${getCommandMention("honeypot-messages")}!
 - **Tips for maximum effectiveness:**
-  - Rename this channel to something unique (e.g., \`dont-type-here\`) so bots can’t easily guess and blacklist it, but keep it clear for real members
+  - Rename this channel to something unique (e.g., \`${newName}\`) so bots can’t easily guess and blacklist it, but keep it clear for real members
   - Keep it near the top of your channel list - bots often target the first few channels
   - Make sure the bot’s highest role is set above any self-assignable roles, so it can act on all users
 - If you have feedback or notice bots bypassing the honeypot, join our [support server](https://discord.gg/BanFeVWyFP) or checkout out the open source [github repo](https://github.com/riskymh/honeypot)!
