@@ -25,6 +25,11 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error(`Unhandled Rejection at: ${promise}, reason: ${reason}`);
 });
 
+process.on('SIGTERM', () => {
+    console.log("Received SIGTERM, shutting down...");
+    runLoop = false;
+    redisBlocking.close();
+});
 
 const getRedis = (c?: Bun.RedisOptions) => new Bun.RedisClient(process.env.REDIS_URL!, c);
 const redis = getRedis();
@@ -34,6 +39,7 @@ const redisBlocking = getRedis({ connectionTimeout: 1000, maxRetries: 1 });
 const rest = new REST().setToken(process.env.DISCORD_TOKEN!);
 const api = new API(rest);
 
+let runLoop = true;
 let currentlyRunning = 0
 
 const listen = async () => {
@@ -45,7 +51,7 @@ const listen = async () => {
     redis.set("discord_ws_config", wsConfig)
     redis.lpush("discord_ws_config_", wsConfig)
 
-    while (1) try {
+    while (runLoop) try {
         if (currentlyRunning > 50) {
             console.warn(`Currently running ${currentlyRunning} event handlers, waiting 300ms to hopefully not infinitely overload server...`);
             await Bun.sleep(300);
@@ -54,30 +60,37 @@ const listen = async () => {
         const rawEvent = (await redisBlocking.blpop("discord_events", 0));
         if (!rawEvent) continue;
         const event = JSON.parse(rawEvent[1]) as GatewayDispatchPayload;
+        if (!event) continue;
 
-        if (event) {
-            const handler = eventMap[event.t as GatewayDispatchEvents];
-            if (handler) {
-                for (const h of handler) {
-                    currentlyRunning++;
-                    (async () => {
-                        try {
-                            // @ts-expect-error - types are weird
-                            await h({ data: event.d, api, applicationId, redis, db });
-                        } catch (err) {
-                            console.error(`Error handling event ${event.t}:`, err);
-                        } finally {
-                            currentlyRunning--;
-                        }
-                    })();
-                }
-            } else {
-                console.error("Event not handled:", event.t);
+        const handler = eventMap[event.t as GatewayDispatchEvents];
+        if (handler) {
+            for (const h of handler) {
+                currentlyRunning++;
+                (async () => {
+                    try {
+                        // @ts-expect-error - types are weird
+                        await h({ data: event.d, api, applicationId, redis, db });
+                    } catch (err) {
+                        console.error(`Error handling event ${event.t}:`, err);
+                    } finally {
+                        currentlyRunning--;
+                    }
+                })();
             }
+        } else {
+            console.error("Event not handled:", event.t);
         }
     } catch (err) {
         console.error("Error in event handler loop:", err);
     }
+
+    console.log("Loop stopped. Waiting for remaining handlers...");
+
+    while (currentlyRunning > 0) await Bun.sleep(100);
+    await rest.waitForAllListenersToComplete();
+
+    console.log("All clear. Exiting.");
+    process.exit(0);
 };
 
 
