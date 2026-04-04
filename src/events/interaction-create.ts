@@ -102,6 +102,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                     { label: "Random Channel Name", value: "random-channel-name", description: "Randomize the honeypot channel name (every day)", default: config.experiments.includes("random-channel-name") },
                                     { label: "Random Channel Name (Chaos)", value: "random-channel-name-chaos", description: "Randomise the honeypot channel name with random characters (every day)", default: config.experiments.includes("random-channel-name-chaos") },
                                 ],
+                                min_values: 0,
                                 max_values: 5,
                                 required: false,
                             }
