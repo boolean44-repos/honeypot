@@ -459,6 +459,16 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                     return;
                 }
 
+                // honeypot log should contain {{user:ping}}, so its not fully a free for all
+                if (newMessages.log_message && !newMessages.log_message.includes("{{user:ping}}")) {
+                    await api.interactions.reply(interaction.id, interaction.token, {
+                        content: `The log message must contain the variable \`{{user:ping}}\` to show the user that triggered the honeypot. Please include that variable in your log message and try again.\n-# No changes have been saved.`,
+                        allowed_mentions: {},
+                        flags: MessageFlags.Ephemeral,
+                    });
+                    return;
+                }
+
                 const config = await db.getConfig(guildId);
                 if (config?.honeypot_channel_id && config?.honeypot_msg_id) {
                     try {

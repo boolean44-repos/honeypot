@@ -117,7 +117,11 @@ export function logActionMessage(userId: string, honeypotChannelId: string, acti
   const actionText = pastTenseActionText[action] || '???unknown action???';
   return {
     allowed_mentions: {},
-    content: customText?.replaceAll("{{user:ping}}", `<@${userId}>`).replaceAll("{{action:text}}", actionText).replaceAll("{{honeypot:channel:ping}}", `<#${honeypotChannelId}>`)
+    content: customText
+      ?.replaceAll("{{user:ping}}", `<@${userId}>`)
+      .replaceAll("{{user:id}}", `${userId}`)
+      .replaceAll("{{action:text}}", actionText)
+      .replaceAll("{{honeypot:channel:ping}}", `<#${honeypotChannelId}>`)
       || `User <@${userId}> was ${actionText} for triggering the honeypot in <#${honeypotChannelId}>.`,
   };
 }
