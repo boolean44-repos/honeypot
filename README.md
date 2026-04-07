@@ -52,3 +52,11 @@ For best results, position your *#honeypot* channel near the top of your server 
 $ bun install
 $ bun start # or `bun dev`
 ```
+
+## Run the bot yourself
+
+* [Railway Template](https://railway.com/deploy/honeypot?referralCode=risky&utm_medium=integration&utm_source=template&utm_campaign=generic)
+* `bun run start`
+* `docker compose up -d` (using `ghcr.io/riskymh/honeypot:latest`)
+
+Or you can just use my hosted version by inviting it to your server: [Invite Link](https://discord.com/oauth2/authorize?client_id=1450060292716494940)
