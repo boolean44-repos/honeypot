@@ -46,7 +46,7 @@ export async function randomChannelNameExperiment(api: API | API2, guildId: stri
 
 const cron: Cron = {
     name: "Experiment Runner",
-    frequency: "daily",
+    frequency: "@daily",
     run: async (api, db) => {
         // intentionally only run one at a time with delay to avoid rate limits (as least important feature)
 
