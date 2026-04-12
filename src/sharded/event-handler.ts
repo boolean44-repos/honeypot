@@ -52,12 +52,15 @@ const listen = async () => {
     redis.lpush("discord_ws_config_", wsConfig)
 
     while (runLoop) try {
-        if (currentlyRunning > 50) {
-            console.warn(`Currently running ${currentlyRunning} event handlers, waiting 300ms to hopefully not infinitely overload server...`);
-            await Bun.sleep(300);
-            // continue;
+        if (currentlyRunning > 500) {
+            console.warn(`Currently running ${currentlyRunning} event handlers, waiting 100ms to hopefully not infinitely overload server...`);
+            await Bun.sleep(100);
+        } else if (currentlyRunning > 50) {
+            console.warn(`Currently running ${currentlyRunning} event handlers, waiting 10ms to hopefully not infinitely overload server...`);
+            await Bun.sleep(10);
         }
-        const rawEvent = (await redisBlocking.blpop("discord_events", 0));
+
+        const rawEvent = (await redisBlocking.brpop("discord_events", 0));
         if (!rawEvent) continue;
         const event = JSON.parse(rawEvent[1]) as GatewayDispatchPayload;
         if (!event) continue;

@@ -53,8 +53,7 @@ services:
         - data:/data
         - redis:/redis
      deploy:
-      # todo: make this possible, but rn we have dumb in mem cache, so it would cause problems if its not shared
-      #  replicas: ${EVENTS_REPLICAS:-1}
+       replicas: ${EVENTS_REPLICAS:-1}
        resources:
          limits:
            memory: 256M
