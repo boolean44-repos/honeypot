@@ -101,7 +101,8 @@ const onMessage = async (
             console.log(`Failed to send DM to user: ${err}`)
         }
 
-        if (forwardPromise) await forwardPromise;
+        // we prob will win the delete before the ban, so no point delaying the ban to wait for msg to create (and not the biggest deal if it fails)
+        // if (forwardPromise) await forwardPromise;
 
         let failed = false;
         if (!isOwner) try {
