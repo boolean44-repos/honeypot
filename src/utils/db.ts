@@ -12,7 +12,7 @@ export type HoneypotConfig = {
 export const db = new SQL(process.env.DATABASE_URL || "sqlite://honeypot.sqlite");
 
 export async function initDb() {
-  await db.unsafe("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;").catch(() => { });
+  await db.unsafe("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 10000;").catch(() => { });
   await db`
     CREATE TABLE IF NOT EXISTS honeypot_config (
       guild_id TEXT PRIMARY KEY,
@@ -91,10 +91,18 @@ export async function unsetLogChannel(guildId: string, channelId: string) {
 }
 
 export async function unsetHoneypotMsg(guildId: string, messageId: string) {
+  // dont get write lock if its not the same msg
+  const row = await db`SELECT honeypot_msg_id FROM honeypot_config WHERE guild_id = ${guildId} AND honeypot_msg_id = ${messageId}`;
+  if (row.length === 0) return;
+
   await db`UPDATE honeypot_config SET honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_msg_id = ${messageId}`;
 }
 
 export async function unsetHoneypotMsgs(guildId: string, messageIds: string[]) {
+  // dont get write lock if none of the msgs match
+  const row = await db`SELECT honeypot_msg_id FROM honeypot_config WHERE guild_id = ${guildId} AND honeypot_msg_id IN ${db(messageIds)}`;
+  if (row.length === 0) return;
+
   await db`UPDATE honeypot_config SET honeypot_msg_id = NULL WHERE guild_id = ${guildId} AND honeypot_msg_id IN ${db(messageIds)}`;
 }
 
