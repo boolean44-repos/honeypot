@@ -168,17 +168,23 @@ async function checkSetupAndWarn(api: API | API2, channelId: string, application
     // check if any role has more than 65% of the members, because otherwise only few can be banned
     const roleCounts = await getRoleMemberCounts(api, guild.id, { signal: AbortSignal.timeout(10_000) }).catch(() => ([]));
     const memberCount = guild.member_count;
-    let anyRoleHasMostMembers = guild.member_count > 50 ? Object.values(roleCounts).some(count => count >= memberCount * 0.65) : false;
+    const anyRoleHasMostMembers = guild.member_count > 50 ? Object.values(roleCounts).some(count => count >= memberCount * 0.65) : false;
 
     // also check if they even invited the bot with correct permissions, because if not then it can’t ban anyone
     const thisBot = guild.members.find(m => m.user.id === applicationId);
     const botPermissions = thisBot ? getPermissionsForMember(guild.roles, thisBot.roles) : BigInt(PermissionFlagsBits.Administrator);
-    let canBan = hasPermission(botPermissions, PermissionFlagsBits.BanMembers);
+    const canBan = hasPermission(botPermissions, PermissionFlagsBits.BanMembers);
 
-    if (anyRoleHasMostMembers || !canBan) {
+    // also check if this channel can be seen by everyone (ie view channel permission for @everyone role), because if not then it defeats the purpose of honeypot
+    // since we just made the channel, we know there cant be any overides, so we can just check the everyone role permissions
+    const everyoneRole = guild.roles.find(r => r.id === guild.id);
+    const canEveryoneViewChannel = everyoneRole?.permissions ? hasPermission(BigInt(everyoneRole?.permissions), PermissionFlagsBits.ViewChannel) : true;
+
+    if (anyRoleHasMostMembers || !canBan || !canEveryoneViewChannel) {
         let content = "";
         if (anyRoleHasMostMembers) content += "\n- There is a role that’s higher than the bot’s with >65% of the members";
         if (!canBan) content += "\n- The bot doesn’t have permission to ban members, which means it can’t softban anyone";
+        if (!canEveryoneViewChannel) content += "\n- The @everyone role can’t view the honeypot channel, which means most members can’t send any messages here";
 
         const msg = await api.channels.createMessage(channelId!, {
             components: [
@@ -209,6 +215,7 @@ async function checkSetupAndWarn(api: API | API2, channelId: string, application
                 },
             ],
             flags: MessageFlags.IsComponentsV2 | MessageFlags.SuppressNotifications,
+            allowed_mentions: {},
         });
 
         if (redis) await addToDeleteMessageCache(channelId, msg.id, redis);
@@ -226,7 +233,7 @@ function getPermissionsForMember(roles: APIRole[], memberRoles: string[]) {
 }
 
 function hasPermission(permissions: bigint, permissionBit: bigint) {
-    return (permissions & permissionBit) !== BigInt(0) || (permissions & BigInt(PermissionFlagsBits.Administrator)) !== BigInt(0);
+    return (permissions & permissionBit) === permissionBit || (permissions & PermissionFlagsBits.Administrator) === permissionBit;
 }
 
 export default handler;
