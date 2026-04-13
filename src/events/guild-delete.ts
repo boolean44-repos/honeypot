@@ -6,6 +6,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildDelete> = {
     event: GatewayDispatchEvents.GuildDelete,
     handler: async ({ data: guild, api, applicationId, redis, db }) => {
         try {
+            // The bot didnt actually leave the guild, discord itself merely is having some issues there
             if (guild.unavailable === true) return;
             await db.deleteConfig(guild.id);
             invalidateGuildInfoCache(guild.id, redis);

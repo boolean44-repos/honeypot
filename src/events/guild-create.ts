@@ -1,19 +1,24 @@
-import { ButtonStyle, ChannelType, GatewayDispatchEvents, MessageFlags, ComponentType, type GatewayGuildCreateDispatchData } from "discord-api-types/v10";
+import { ButtonStyle, ChannelType, GatewayDispatchEvents, MessageFlags, ComponentType, type GatewayGuildCreateDispatchData, type APIRole, PermissionFlagsBits } from "discord-api-types/v10";
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
 import { honeypotWarningMessage } from "../utils/messages";
 import { addToDeleteMessageCache, getCommandIdCache, removeFromDeleteMessageCache, setGuildInfoCache, setHoneypotChannelCache } from "../utils/cache";
 import randomChannelNames from "../utils/random-channel-names.yaml";
+import { getRoleMemberCounts } from "../utils/discord-api";
 
 const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
     event: GatewayDispatchEvents.GuildCreate,
     handler: async ({ data: guild, api, applicationId, redis, db }) => {
+        // if the guild is unavailable, we can’t do anything, so just skip it. We’ll get another event when it becomes available again
+        if (guild.unavailable) return;
+
         try {
             setGuildInfoCache(guild.id, { name: guild.name, ownerId: guild.owner_id, vanityInviteCode: guild.vanity_url_code }, redis);
 
+            // if we already have config for this server, don't try to recreate (every bot resart creates this event) 
             let config = await db.getConfig(guild.id);
-            if (config?.action === "disabled" || config) return;
+            if (config) return;
 
             let channelId = null as null | string;
             let msgId = null as null | string;
@@ -21,11 +26,18 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
             try {
                 const { id: channId, new: isNewChannel } = await findOrCreateHoneypotChannel(api, guild);
                 channelId = channId;
-                msgId = await postWarning(api, channelId, applicationId!, (config as any | undefined)?.action || "softban", await db.getModeratedCount(guild.id));
+                msgId = await postWarning(api, channelId, applicationId, "softban", await db.getModeratedCount(guild.id));
                 setupSuccess = true;
-                if (isNewChannel) sendIntoMessage(api, redis, channelId).catch((err) => {
-                    console.log(`Failed to send intro message: ${err}`);
-                });
+                if (isNewChannel) {
+                    sendIntroMessage(api, redis, channelId)
+                        .catch((err) => console.log(`Failed to send intro message: ${err}`))
+                        .then((introMsgId) => introMsgId &&
+                            checkSetupAndWarn(api, channelId!, applicationId, redis, guild)
+                        ).catch((err) => console.log(`Failed to check setup and send warning msg: ${err}`))
+                } else {
+                    checkSetupAndWarn(api, channelId, applicationId, redis, guild)
+                        .catch((err) => console.log(`Failed to check setup and send warning msg: ${err}`))
+                }
             } catch (err) {
                 console.log(`Failed to create/send honeypot message: ${err}`);
             }
@@ -38,7 +50,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
                 experiments: [],
             });
             if (redis) channelId && setHoneypotChannelCache(guild.id, channelId, redis);
-            if (!setupSuccess && !config && guild.system_channel_id) {
+            if (!setupSuccess && guild.system_channel_id) {
                 try {
                     await api.channels.createMessage(guild.system_channel_id, {
                         content: `👋 Thanks for adding the honeypot bot! Please run /honeypot to finish setup.\n-# The bot couldn’t create or send the warning message automatically.`,
@@ -71,10 +83,12 @@ async function findOrCreateHoneypotChannel(api: API | API2, guild: GatewayGuildC
 
 async function postWarning(api: API | API2, channelId: string, applicationId: string, action = "softban" as const, moderatedCount = 0) {
     const messages = await api.channels.getMessages(channelId, { limit: 100 }).catch(() => []);
-    const botMessages = messages.filter(m => m.author?.id === applicationId);
+    const botMessages = messages.filter(m => m.author?.id === applicationId).reverse();
 
     if (botMessages.length > 0) {
-        const [first, ...rest] = botMessages;
+        const first = botMessages.find(m => !m.referenced_message || !m.interaction_metadata);
+        const rest = first ? botMessages.filter(m => m.id !== first.id) : botMessages;
+
         if (!first) {
             const msg = await api.channels.createMessage(channelId, honeypotWarningMessage(moderatedCount, action));
             return msg.id;
@@ -94,7 +108,7 @@ async function postWarning(api: API | API2, channelId: string, applicationId: st
     }
 }
 
-async function sendIntoMessage(api: API | API2, redis: Bun.RedisClient | undefined, channelId: string) {
+async function sendIntroMessage(api: API | API2, redis: Bun.RedisClient | undefined, channelId: string) {
     const commands = redis ? await getCommandIdCache(redis) : null;
     function getCommandMention(commandName: string) {
         const commandId = commands?.[commandName];
@@ -136,7 +150,7 @@ async function sendIntoMessage(api: API | API2, redis: Bun.RedisClient | undefin
                     type: ComponentType.Button,
                     style: ButtonStyle.Secondary,
                     label: "Delete message now",
-                    custom_id: "delete_into_message",
+                    custom_id: "delete_intro_message",
                 }
             },
         ]
@@ -146,7 +160,73 @@ async function sendIntoMessage(api: API | API2, redis: Bun.RedisClient | undefin
         await api.channels.deleteMessage(channelId, msgId, { reason: "Cleaning up welcome message" }).catch(() => { });
         if (redis) await removeFromDeleteMessageCache(channelId, msgId, redis);
     }, removalTime);
+    return msgId;
 }
 
+
+async function checkSetupAndWarn(api: API | API2, channelId: string, applicationId: string, redis: Bun.RedisClient | undefined, guild: GatewayGuildCreateDispatchData) {
+    // check if any role has more than 65% of the members, because otherwise only few can be banned
+    const roleCounts = await getRoleMemberCounts(api, guild.id, { signal: AbortSignal.timeout(10_000) }).catch(() => ([]));
+    const memberCount = guild.member_count;
+    let anyRoleHasMostMembers = guild.member_count > 50 ? Object.values(roleCounts).some(count => count >= memberCount * 0.65) : false;
+
+    // also check if they even invited the bot with correct permissions, because if not then it can’t ban anyone
+    const thisBot = guild.members.find(m => m.user.id === applicationId);
+    const botPermissions = thisBot ? getPermissionsForMember(guild.roles, thisBot.roles) : BigInt(PermissionFlagsBits.Administrator);
+    let canBan = hasPermission(botPermissions, PermissionFlagsBits.BanMembers);
+
+    if (anyRoleHasMostMembers || !canBan) {
+        let content = "";
+        if (anyRoleHasMostMembers) content += "\n- There is a role that’s higher than the bot’s with >65% of the members";
+        if (!canBan) content += "\n- The bot doesn’t have permission to ban members, which means it can’t softban anyone";
+
+        const msg = await api.channels.createMessage(channelId!, {
+            components: [
+                {
+                    type: ComponentType.Container,
+                    accent_color: 0xFFA500,
+                    components: [
+                        {
+                            type: ComponentType.Section,
+                            components: [
+                                {
+                                    type: ComponentType.TextDisplay,
+                                    content: "### \\⚠️ Some potential problems were detected:",
+                                },
+                            ],
+                            accessory: {
+                                type: ComponentType.Button,
+                                style: ButtonStyle.Secondary,
+                                label: "Dismiss",
+                                custom_id: "delete_intro_message",
+                            }
+                        },
+                        {
+                            type: ComponentType.TextDisplay,
+                            content,
+                        },
+                    ],
+                },
+            ],
+            flags: MessageFlags.IsComponentsV2 | MessageFlags.SuppressNotifications,
+        });
+
+        if (redis) await addToDeleteMessageCache(channelId, msg.id, redis);
+    }
+}
+
+function getPermissionsForMember(roles: APIRole[], memberRoles: string[]) {
+    let permissions = BigInt(0);
+    for (const role of roles) {
+        if (memberRoles.includes(role.id)) {
+            permissions |= BigInt(role.permissions);
+        }
+    }
+    return permissions;
+}
+
+function hasPermission(permissions: bigint, permissionBit: bigint) {
+    return (permissions & permissionBit) !== BigInt(0) || (permissions & BigInt(PermissionFlagsBits.Administrator)) !== BigInt(0);
+}
 
 export default handler;

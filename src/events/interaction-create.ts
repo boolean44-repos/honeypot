@@ -630,7 +630,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
             }
 
             // into welcome command to allow early deleting
-            else if (guildId && interaction.type === InteractionType.MessageComponent && interaction.data.custom_id === "delete_into_message") {
+            else if (guildId && interaction.type === InteractionType.MessageComponent && interaction.data.custom_id === "delete_intro_message") {
                 if (!interaction.member?.permissions || !hasPermission(BigInt(interaction.member.permissions), PermissionFlagsBits.ManageMessages)) {
                     await api.interactions.reply(interaction.id, interaction.token, {
                         content: "You need the Manage Messages permission to delete this message.",
