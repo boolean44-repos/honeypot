@@ -51,7 +51,11 @@ const dispatchEvent = async (event: GatewayDispatchPayload, shardId: number, sha
     }
 
     if (shouldBroadcastEvent(event)) {
-        await redis.lpush("discord_events", JSON.stringify(event));
+        if (isImportantEvent(event)) {
+            await redis.lpush("discord_events", JSON.stringify(event));
+        } else {
+            await redis.rpush("discord_events", JSON.stringify(event));
+        }
     }
 }
 
@@ -83,6 +87,10 @@ function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean {
         else if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
     }
     return true;
+}
+
+function isImportantEvent(event: GatewayDispatchPayload): boolean {
+    return event.t === GatewayDispatchEvents.InteractionCreate;
 }
 
 
