@@ -1,5 +1,5 @@
 # Build stage
-FROM oven/bun:alpine AS builder
+FROM oven/bun:slim AS builder
 
 WORKDIR /app
 
@@ -9,12 +9,10 @@ RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lock
 COPY src ./src
 RUN bun run build:events:standalone
 
-# Production stage - minimal alpine
-FROM alpine:latest AS production
+# Production stage
+FROM debian:bookworm-slim AS production
 
 WORKDIR /app
-
-RUN apk add --no-cache libstdc++ libgcc
 
 COPY --from=builder /app/dist/event-handler ./event-handler
 

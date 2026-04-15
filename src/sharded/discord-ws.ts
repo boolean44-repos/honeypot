@@ -51,31 +51,44 @@ const dispatchEvent = async (event: GatewayDispatchPayload, shardId: number, sha
     }
 
     if (shouldBroadcastEvent(event)) {
-        if (isImportantEvent(event)) {
-            await redis.lpush("discord_events", JSON.stringify(event));
+        // interactions are more important that we respond on time
+        if (event.t === GatewayDispatchEvents.InteractionCreate) {
+            redis.lpush("discord_events", JSON.stringify(event));
         } else {
-            await redis.rpush("discord_events", JSON.stringify(event));
+            redis.rpush("discord_events", JSON.stringify(event));
         }
     }
 }
 
 manager.on(WebSocketShardEvents.Dispatch, dispatchEvent);
 
-let wsConfig = {} as { events?: string[], messageEvents?: { sendBotEvents?: boolean } };
+let wsConfig = {} as { events?: Set<string>, messageEvents?: { sendBotEvents?: boolean } };
 (async () => {
     const raw = await redis.get("discord_ws_config")
-    if (raw) wsConfig = JSON.parse(raw)
+    if (raw) {
+        const _wsConfig = JSON.parse(raw)
+        wsConfig = {
+            events: new Set(_wsConfig.events),
+            messageEvents: _wsConfig.messageEvents
+        };
+    }
 
     while (1) {
         const raw = await redisBlocking.blpop("discord_ws_config_", 0)
-        if (raw) wsConfig = JSON.parse(raw[1])
+        if (raw) {
+            const _wsConfig = JSON.parse(raw[1])
+            wsConfig = {
+                events: new Set(_wsConfig.events),
+                messageEvents: _wsConfig.messageEvents
+            };
+        }
     }
 })();
 
 
 function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean {
     if (!wsConfig.events) return true;
-    else if (!wsConfig.events.includes(event.t)) return false;
+    else if (!wsConfig.events.has(event.t)) return false;
     // TODO: the better solution to this is to have a redis list of "subscribed" channels instead of arbitrarily removing high trafic events
     else if (wsConfig.messageEvents?.sendBotEvents === false) {
         // deletes dont contain any info other than ids, so we can allow them to go through even for bot messages without worrying about extra bot events getting through
@@ -84,15 +97,10 @@ function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean {
             // bot messages are somewhat often from logging so we limit it, but if it was slash command type we want as we associate the msg with the user who ran
             if (event.d?.author?.bot && !event.d?.interaction_metadata) return false;
         }
-        else if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
+        // else if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
     }
     return true;
 }
-
-function isImportantEvent(event: GatewayDispatchPayload): boolean {
-    return event.t === GatewayDispatchEvents.InteractionCreate;
-}
-
 
 // every day recheck if shard count has increased, if so make them run both at same time for a bit to hopefully avoid downtime, then kill old one
 const checkForResharding = async () => {
