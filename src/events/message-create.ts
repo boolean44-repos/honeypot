@@ -57,18 +57,18 @@ const onMessage = async (
 
         if (config.action === 'disabled') return;
 
-        let forwardPromise = null as null | Promise<any>;
-        if (config.experiments.includes("forward-message") && config.log_channel_id && messageId) {
-            // intentionally not awaited as in theory we can do DM and this at same time (and avoid extra wait-time)
-            forwardPromise = api.channels.createMessage(config.log_channel_id, {
-                message_reference: {
-                    type: MessageReferenceType.Forward,
-                    channel_id: channelId,
-                    message_id: messageId,
-                    guild_id: guildId,
-                }
-            }).catch(err => console.log(`Failed to forward message to log channel: ${err}`));
-        }
+        // let forwardPromise = null as null | Promise<any>;
+        // if (config.experiments.includes("forward-message") && config.log_channel_id && messageId) {
+            // // intentionally not awaited as in theory we can do DM and this at same time (and avoid extra wait-time)
+            // forwardPromise = api.channels.createMessage(config.log_channel_id, {
+            //     message_reference: {
+            //         type: MessageReferenceType.Forward,
+            //         channel_id: channelId,
+            //         message_id: messageId,
+            //         guild_id: guildId,
+            //     }
+            // }).catch(err => console.log(`Failed to forward message to log channel: ${err}`));
+        // }
 
         const customMessages = await db.getHoneypotMessages(guildId);
 

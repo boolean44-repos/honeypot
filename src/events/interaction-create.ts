@@ -95,7 +95,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                 custom_id: "honeypot_experiments",
                                 placeholder: "Select experiments to enable",
                                 options: [
-                                    { label: "Forward Message", value: "forward-message", description: "Forward the triggered message to the log channel", default: config.experiments.includes("forward-message") },
+                                    // { label: "Forward Message", value: "forward-message", description: "Forward the triggered message to the log channel", default: config.experiments.includes("forward-message") },
                                     { label: "No Warning Msg", value: "no-warning-msg", description: "Don’t include a warning message in the #honeypot channel", default: config.experiments.includes("no-warning-msg") },
                                     { label: "No DM", value: "no-dm", description: "Don’t DM the user that they triggered the honeypot", default: config.experiments.includes("no-dm") },
                                     // { label: "Timeout for Typing", value: "timeout-for-typing", description: "Timeout users (for 10sec) who are typing in the honeypot channel", default: config.experiments.includes("timeout-for-typing") },
@@ -104,7 +104,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                                     { label: "Random Channel Name (Chaos)", value: "random-channel-name-chaos", description: "Randomise the honeypot channel name with random characters (every day)", default: config.experiments.includes("random-channel-name-chaos") },
                                 ],
                                 min_values: 0,
-                                max_values: 6,
+                                max_values: 5,
                                 required: false,
                             }
                         }
