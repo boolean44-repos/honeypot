@@ -30,16 +30,18 @@ const getManager = (shards: number, sessionCache: Map<number, SessionInfo> = new
     rest,
     compression: process.env.COMPRESS_WEBSOCKETS === "true" ? CompressionMethod.ZlibNative : null,
     shardCount: shards,
-    initialPresence: initialPresence,
+    initialPresence,
     retrieveSessionInfo: (shardId) => sessionCache.get(shardId) ?? null,
     updateSessionInfo: (shardId, sessionInfo) => sessionInfo
         ? void sessionCache.set(shardId, sessionInfo)
         : void sessionCache.delete(shardId),
 });
+const managerState = "a" // update this when initial presense or intents changes (ie require shards to reconnect)
 
 const sessionInfoCache: Record<number, Map<number, SessionInfo>> = {};
 async function getSessionStorageFromRedis(shardCount: number) {
-    const raw = await redis.hget("discord_ws_sessions", shardCount.toString());
+    const _raw = await redis.hmget("discord_ws_sessions", `${managerState}_${shardCount}`, shardCount.toString());
+    const raw = _raw[0] || _raw[1];
     if (raw) {
         const data = JSON.parse(raw) as Record<string, SessionInfo>;
         return new Map(Object.entries(data).map(([k, v]) => [parseInt(k), v]));
@@ -49,7 +51,7 @@ async function getSessionStorageFromRedis(shardCount: number) {
 async function saveSessionStorageToRedis(shardCount: number, sessionStorage: Map<number, SessionInfo>) {
     const obj = Object.fromEntries(sessionStorage);
     const threeMinSecs = 3 * 60;
-    await redis.hsetex("discord_ws_sessions", "EX", threeMinSecs, "FIELDS", 1, shardCount.toString(), JSON.stringify(obj));
+    await redis.hsetex("discord_ws_sessions", "EX", threeMinSecs, "FIELDS", 1, `${managerState}_${shardCount}`, JSON.stringify(obj));
 }
 
 let shardCount = await getShards();
@@ -183,6 +185,9 @@ const checkForResharding = async () => {
 };
 
 console.log(`Starting WebSocket Manager with ${shardCount} shards...`);
+if (sessionInfoCache[shardCount]?.size) {
+    console.log("Found existing session info in Redis, attempting to resume sessions...");
+}
 await manager.connect();
 
 

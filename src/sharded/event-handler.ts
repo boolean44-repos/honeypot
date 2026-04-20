@@ -114,6 +114,7 @@ function getEventMap() {
 const eventMap = getEventMap();
 
 listen();
+console.log("Event handler worker started.");
 
 // todo: consider this better because if this has replicas, then each instance will run the cron...
 if (process.env.REPLICA_ID === "1" || !process.env.REPLICA_ID) {
