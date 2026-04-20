@@ -120,36 +120,14 @@ const onMessage = async (
                     guildId,
                     userId,
                     { delete_message_seconds: 3600 },
-                    { reason: "Triggered honeypot -> softban (kick) 1/4" }
+                    { reason: "Triggered honeypot -> softban (kick) 1/2" }
                 );
-                // maybe discord needs time to delete their messages?
-                await Bun.sleep(150)
+                // await Bun.sleep(150)
                 await api.guilds.unbanUser(
                     guildId,
                     userId,
-                    { reason: "Triggered honeypot -> softban (kick) 2/4" }
+                    { reason: "Triggered honeypot -> softban (kick) 2/2" }
                 );
-
-                // double unban setup? surely this gotta yeet them now??
-                try {
-                    // dont wait on this for too long
-                    const timeout = AbortSignal.timeout(10_000);
-                    await Bun.sleep(1000)
-                    await api.guilds.banUser(
-                        guildId,
-                        userId,
-                        { delete_message_seconds: 3600 },
-                        { reason: "Triggered honeypot -> softban (kick) 3/4", signal: timeout }
-                    );
-                    await Bun.sleep(150)
-                    await api.guilds.unbanUser(
-                        guildId,
-                        userId,
-                        { reason: "Triggered honeypot -> softban (kick) 4/4", signal: timeout }
-                    );
-                } catch (err) {
-                    console.log(`Failed to double softban user (probably not an issue): ${err}`);
-                }
             } else {
                 console.error("Unknown action in honeypot config:", config.action);
                 failed = true;
