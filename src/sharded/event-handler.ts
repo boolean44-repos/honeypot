@@ -45,6 +45,7 @@ let currentlyRunning = 0
 const listen = async () => {
     const wsConfig = JSON.stringify({
         events: Object.keys(eventMap),
+        messageEvents: { sendBotEvents: false },
     })
     redis.set("discord_ws_config", wsConfig)
     redis.lpush("discord_ws_config_", wsConfig)

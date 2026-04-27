@@ -91,13 +91,14 @@ const dispatchEvent = async (id: number, event: GatewayDispatchPayload, shardId:
 
 manager.addListener(WebSocketShardEvents.Dispatch, dispatchEvent.bind(null, reshardedId));
 
-let wsConfig = {} as { events?: Set<string> };
+let wsConfig = {} as { events?: Set<string>, messageEvents?: { sendBotEvents?: boolean } };
 (async () => {
     const raw = await redis.get("discord_ws_config")
     if (raw) {
         const _wsConfig = JSON.parse(raw)
         wsConfig = {
             events: new Set(_wsConfig.events),
+            messageEvents: _wsConfig.messageEvents,
         };
     }
 
@@ -107,6 +108,7 @@ let wsConfig = {} as { events?: Set<string> };
             const _wsConfig = JSON.parse(raw[1])
             wsConfig = {
                 events: new Set(_wsConfig.events),
+                messageEvents: _wsConfig.messageEvents,
             };
         }
     }
@@ -115,8 +117,18 @@ let wsConfig = {} as { events?: Set<string> };
 
 function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean | Promise<boolean> {
     if (!wsConfig.events) return true;
-    else if (!wsConfig.events.has(event.t)) return false;
-    else if (
+    if (!wsConfig.events.has(event.t)) return false;
+    // Even though we actually check subscribed channels, we should still filter out "high traffic" message events as early as possible
+    if (wsConfig.messageEvents?.sendBotEvents === false) {
+        // deletes dont contain any info other than ids, so we can allow them to go through even for bot messages without worrying about extra bot events getting through
+        // at least bot msg deletes aren't as common and also we need it to know if someone removed out honeypot warning msg anyway
+        if (event.t === GatewayDispatchEvents.MessageCreate || event.t === GatewayDispatchEvents.MessageUpdate) {
+            // bot messages are somewhat often from logging so we limit it, but if it was slash command type we want as we associate the msg with the user who ran
+            if (event.d?.author?.bot && !event.d?.interaction_metadata) return false;
+        }
+        // else if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
+    }
+    if (
         (event.t === GatewayDispatchEvents.MessageCreate || event.t === GatewayDispatchEvents.MessageUpdate || event.t === GatewayDispatchEvents.MessageDelete || event.t === GatewayDispatchEvents.MessageDeleteBulk)
         && typeof event.d.guild_id === "string"
     ) {
