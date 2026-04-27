@@ -2,7 +2,7 @@ import { GatewayDispatchEvents, MessageReferenceType, type APIMessage } from "di
 import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
-import { couldBeHoneypotChannel, getDmChannelCache, getGuildInfo, setDmChannelCache, setHoneypotChannelCache } from "../utils/cache";
+import { getDmChannelCache, getGuildInfo, getSubscribedChannelCache, setDmChannelCache, setSubscribedChannelCache } from "../utils/cache";
 import { CUSTOM_EMOJI_ID } from "../utils/constants";
 import { honeypotUserDMMessage, honeypotWarningMessage, logActionMessage } from "../utils/messages";
 
@@ -36,12 +36,12 @@ const onMessage = async (
     redis?: Bun.RedisClient
 ) => {
     try {
-        if (redis && (await couldBeHoneypotChannel(guildId, channelId, redis)) === false) return;
+        if (redis && process.env.HAS_PROXY_WS !== "true" && (await getSubscribedChannelCache(guildId, redis))?.includes(channelId)) return;
 
         const config = await db.getConfig(guildId);
         if (!config || !config.action) return;
         if (channelId !== config.honeypot_channel_id) {
-            if (redis && config.honeypot_channel_id) setHoneypotChannelCache(guildId, config.honeypot_channel_id!, redis);
+            if (redis && config.honeypot_channel_id) setSubscribedChannelCache(guildId, [config.honeypot_channel_id], redis);
             return;
         }
 

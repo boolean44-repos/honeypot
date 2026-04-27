@@ -71,7 +71,7 @@ const onExit = async (type: string) => {
 process.on('SIGTERM', onExit.bind(null, "SIGTERM"));
 process.on('SIGINT', onExit.bind(null, "SIGINT"));
 
-const dispatchEvent = (id: number, event: GatewayDispatchPayload, shardId: number) => {
+const dispatchEvent = async (id: number, event: GatewayDispatchPayload, shardId: number) => {
     if (event.t === GatewayDispatchEvents.Ready) {
         console.info(`[Shard ${shardId}] ${event.d.user.username}#${event.d.user.discriminator} is ready!`);
     }
@@ -79,7 +79,7 @@ const dispatchEvent = (id: number, event: GatewayDispatchPayload, shardId: numbe
     // only send events from one ws manager - checking manually is safer than assuming listener is 100% destroyed
     if (reshardedId !== id) return;
 
-    if (shouldBroadcastEvent(event)) {
+    if (await shouldBroadcastEvent(event)) {
         // interactions are more important that we respond on time
         if (event.t === GatewayDispatchEvents.InteractionCreate) {
             redis.lpush("discord_events", JSON.stringify(event));
@@ -91,14 +91,13 @@ const dispatchEvent = (id: number, event: GatewayDispatchPayload, shardId: numbe
 
 manager.addListener(WebSocketShardEvents.Dispatch, dispatchEvent.bind(null, reshardedId));
 
-let wsConfig = {} as { events?: Set<string>, messageEvents?: { sendBotEvents?: boolean } };
+let wsConfig = {} as { events?: Set<string> };
 (async () => {
     const raw = await redis.get("discord_ws_config")
     if (raw) {
         const _wsConfig = JSON.parse(raw)
         wsConfig = {
             events: new Set(_wsConfig.events),
-            messageEvents: _wsConfig.messageEvents
         };
     }
 
@@ -108,26 +107,27 @@ let wsConfig = {} as { events?: Set<string>, messageEvents?: { sendBotEvents?: b
             const _wsConfig = JSON.parse(raw[1])
             wsConfig = {
                 events: new Set(_wsConfig.events),
-                messageEvents: _wsConfig.messageEvents
             };
         }
     }
 })();
 
 
-function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean {
+function shouldBroadcastEvent(event: GatewayDispatchPayload): boolean | Promise<boolean> {
     if (!wsConfig.events) return true;
     else if (!wsConfig.events.has(event.t)) return false;
-    // TODO: the better solution to this is to have a redis list of "subscribed" channels instead of arbitrarily removing high trafic events
-    else if (wsConfig.messageEvents?.sendBotEvents === false) {
-        // deletes dont contain any info other than ids, so we can allow them to go through even for bot messages without worrying about extra bot events getting through
-        // at least bot msg deletes aren't as common and also we need it to know if someone removed out honeypot warning msg anyway
-        if (event.t === GatewayDispatchEvents.MessageCreate || event.t === GatewayDispatchEvents.MessageUpdate) {
-            // bot messages are somewhat often from logging so we limit it, but if it was slash command type we want as we associate the msg with the user who ran
-            if (event.d?.author?.bot && !event.d?.interaction_metadata) return false;
-        }
-        // else if ((event.t === GatewayDispatchEvents.TypingStart) && event.d?.member?.user?.bot) return false;
-    }
+    else if (
+        (event.t === GatewayDispatchEvents.MessageCreate || event.t === GatewayDispatchEvents.MessageUpdate || event.t === GatewayDispatchEvents.MessageDelete || event.t === GatewayDispatchEvents.MessageDeleteBulk)
+        && typeof event.d.guild_id === "string"
+    ) {
+        const guildId = event.d.guild_id;
+        const channelId = event.d.channel_id;
+        return redis.hget("discord_ws_config:guild-channels", guildId).then((channels) => {
+            if (!channels) return true;
+            const channelIds = channels.split(",") ?? [];
+            return channelIds.includes(channelId);
+        });
+    };
     return true;
 }
 

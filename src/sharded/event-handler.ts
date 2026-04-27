@@ -14,7 +14,7 @@ if (!process.env.REDIS_URL) throw new Error("REDIS_URL environment variable not 
 let applicationId = atob(process.env.DISCORD_TOKEN?.split(".")[0]!); // i bet most didn’t know this fact about discord tokens
 
 process.title = "Honeypot Bot (riskymh.dev) - Event Handler Worker";
-
+process.env.HAS_PROXY_WS = "true";
 await db.initDb();
 
 process.on('uncaughtException', (err) => {
@@ -43,10 +43,8 @@ let runLoop = true;
 let currentlyRunning = 0
 
 const listen = async () => {
-    const eventsListening = Object.keys(eventMap);
     const wsConfig = JSON.stringify({
-        events: eventsListening,
-        messageEvents: { sendBotEvents: false }
+        events: Object.keys(eventMap),
     })
     redis.set("discord_ws_config", wsConfig)
     redis.lpush("discord_ws_config_", wsConfig)

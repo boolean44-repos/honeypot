@@ -3,7 +3,7 @@ import type { EventHandler } from "./events";
 import type { API } from "@discordjs/core";
 import type { API as API2 } from "@discordjs/core/http-only";
 import { honeypotWarningMessage } from "../utils/messages";
-import { addToDeleteMessageCache, getCommandIdCache, removeFromDeleteMessageCache, setGuildInfoCache, setHoneypotChannelCache } from "../utils/cache";
+import { addToDeleteMessageCache, getCommandIdCache, removeFromDeleteMessageCache, setGuildInfoCache, setSubscribedChannelCache } from "../utils/cache";
 import randomChannelNames from "../utils/random-channel-names.yaml";
 import { getRoleMemberCounts } from "../utils/discord-api";
 
@@ -49,7 +49,7 @@ const handler: EventHandler<GatewayDispatchEvents.GuildCreate> = {
                 action: 'softban',
                 experiments: [],
             });
-            if (redis) channelId && setHoneypotChannelCache(guild.id, channelId, redis);
+            if (redis) channelId && setSubscribedChannelCache(guild.id, [channelId], redis);
             if (!setupSuccess && guild.system_channel_id) {
                 try {
                     await api.channels.createMessage(guild.system_channel_id, {

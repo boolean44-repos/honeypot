@@ -49,19 +49,16 @@ export const getDmChannelCache = (userId: string, redis: Bun.RedisClient) => {
 }
 
 const daySeconds = 24 * 60 * 60;
-
-export const setHoneypotChannelCache = (guildId: string, channelId: string, redis: Bun.RedisClient) => {
-  redis.hsetex("honeypot_channel", "EX", daySeconds, "FIELDS", 1, guildId, channelId);
+export const setSubscribedChannelCache = (guildId: string, channelIds: string[], redis: Bun.RedisClient) => {
+  redis.hsetex("discord_ws_config:guild-channels", "EX", daySeconds, "FIELDS", 1, guildId, channelIds.join(","));
 }
-/** Returns `true`/`false` if cache hit and is/isnt honeypot channel, `null` if not cached  */
-export const couldBeHoneypotChannel = async (guildId: string, channelId: string, redis: Bun.RedisClient) => {
-  const cached = await redis.hget("honeypot_channel", guildId);
-  if (cached === channelId) return true;
-  if (cached && cached !== channelId) return false;
-  return null;
+export const getSubscribedChannelCache = async (guildId: string, redis: Bun.RedisClient) => {
+  const channels = await redis.hget("discord_ws_config:guild-channels", guildId);
+  if (!channels) return null;
+  return channels.split(",");
 }
-export const removeGuildHoneypotChannelCache = (guildId: string, redis: Bun.RedisClient) => {
-  redis.hdel("honeypot_channel", guildId);
+export const removeGuildSubscribedChannelCache = (guildId: string, redis: Bun.RedisClient) => {
+  redis.hdel("discord_ws_config:guild-channels", guildId);
 }
 
 
