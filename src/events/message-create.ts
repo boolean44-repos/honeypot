@@ -10,6 +10,7 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
     event: GatewayDispatchEvents.MessageCreate,
     handler: async ({ data: message, api, applicationId, redis, db }) => {
         if (!message.guild_id) return;
+        // if a user used a slash command, attribute it to the user instead of ignoring as its a bot msg
         if (message.interaction_metadata && message.author.id !== applicationId) {
             return await onMessage({
                 userId: message.interaction_metadata.user.id,
@@ -19,13 +20,22 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
             }, api, db, redis);
         }
 
-        if (message.author.bot) return;
-        return await onMessage({
-            userId: message.author.id,
-            channelId: message.channel_id,
-            guildId: message.guild_id,
-            messageId: message.id
-        }, api, db, redis);
+        // if it's a normal message, only trigger if it's not a bot (to avoid spam as we trust actual bots more)
+        if (!message.author.bot) {
+            return await onMessage({
+                userId: message.author.id,
+                channelId: message.channel_id,
+                guildId: message.guild_id,
+                messageId: message.id
+            }, api, db, redis);
+        }
+
+        // if it's a bot message, still get the proxy to properly subscribe and avoid seeing the spam
+        if (process.env.HAS_PROXY_WS && redis && message.guild_id) {
+            const config = await db.getConfig(message.guild_id);
+            if (!config || !config.action || !config.honeypot_channel_id) return;
+            setSubscribedChannelCache(message.guild_id, [config.honeypot_channel_id], redis);
+        }
     }
 };
 
@@ -36,7 +46,7 @@ const onMessage = async (
     redis?: Bun.RedisClient
 ) => {
     try {
-        if (redis && process.env.HAS_PROXY_WS !== "true" && (await getSubscribedChannelCache(guildId, redis))?.includes(channelId)) return;
+        if (!process.env.HAS_PROXY_WS && redis && (await getSubscribedChannelCache(guildId, redis))?.includes(channelId)) return;
 
         const config = await db.getConfig(guildId);
         if (!config || !config.action) return;
