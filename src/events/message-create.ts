@@ -33,8 +33,8 @@ const handler: EventHandler<GatewayDispatchEvents.MessageCreate> = {
         // if it's a bot message, still get the proxy to properly subscribe and avoid seeing the spam
         if (process.env.HAS_PROXY_WS && redis && message.guild_id) {
             const config = await db.getConfig(message.guild_id);
-            if (!config || !config.action || !config.honeypot_channel_id) return;
-            setSubscribedChannelCache(message.guild_id, [config.honeypot_channel_id], redis);
+            if (!config || !config.action) return;
+            setSubscribedChannelCache(message.guild_id, [config.honeypot_channel_id || "none"], redis);
         }
     }
 };
@@ -51,7 +51,7 @@ const onMessage = async (
         const config = await db.getConfig(guildId);
         if (!config || !config.action) return;
         if (channelId !== config.honeypot_channel_id) {
-            if (redis && config.honeypot_channel_id) setSubscribedChannelCache(guildId, [config.honeypot_channel_id], redis);
+            if (redis) setSubscribedChannelCache(guildId, [config.honeypot_channel_id || "none"], redis);
             return;
         }
 
