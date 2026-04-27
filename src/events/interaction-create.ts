@@ -226,10 +226,10 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                 // but if either fail, then let user know its broken sadly
                 let msgId: string | null = null;
                 if (!newConfig.experiments.includes("no-warning-msg")) {
+                    const count = await db.getModeratedCount(guildId);
+                    const customMessages = await db.getHoneypotMessages(guildId);
+                    const messageBody = honeypotWarningMessage(count, newConfig.action, customMessages?.warning_message);
                     try {
-                        const count = await db.getModeratedCount(guildId);
-                        const customMessages = await db.getHoneypotMessages(guildId);
-                        const messageBody = honeypotWarningMessage(count, newConfig.action, customMessages?.warning_message);
                         if (honeypotChanged || !prevConfig?.honeypot_msg_id) {
                             const msg = await api.channels.createMessage(
                                 newConfig.honeypot_channel_id,
@@ -254,6 +254,7 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                             console.log("No previous honeypot message ID found to edit.");
                         }
                     } catch (err) {
+                        console.log(`Error creating/editing honeypot message (interaction handler): ${err}`);
                         await api.interactions.reply(interaction.id, interaction.token, {
                             content: `There was a problem setting up the honeypot channel to <#${newConfig.honeypot_channel_id}>. Please check my permissions and try again.\n-# No settings have been changed.`,
                             allowed_mentions: {},
@@ -276,7 +277,8 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                             content: `Honeypot is set up in <#${newConfig.honeypot_channel_id}>! This current channel will log honeypot events.`,
                             allowed_mentions: {},
                         });
-                    } catch {
+                    } catch (err) {
+                        console.log(`Error sending test message to log channel (interaction handler): ${err}`);
                         // clean up just created honeypot message if log channel fails (because user might think it's fully set up otherwise)
                         if (msgId) {
                             await api.channels.deleteMessage(newConfig.honeypot_channel_id, msgId, { reason: "Cleaning up honeypot message after log channel setup failure" }).catch(() => null);
@@ -472,14 +474,15 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
 
                 const config = await db.getConfig(guildId);
                 if (config?.honeypot_channel_id && config?.honeypot_msg_id) {
+                    const guildModeratedCount = await db.getModeratedCount(guildId);
                     try {
-                        const guildModeratedCount = await db.getModeratedCount(guildId);
                         await api.channels.editMessage(
                             config.honeypot_channel_id,
                             config.honeypot_msg_id,
                             honeypotWarningMessage(guildModeratedCount, config.action, newMessages.warning_message)
                         );
                     } catch (err) {
+                        console.log(`Error updating honeypot warning message (interaction handler): ${err}`);
                         await api.interactions.reply(interaction.id, interaction.token, {
                             content: `There was a problem updating the honeypot warning message in <#${config.honeypot_channel_id}>. Please check my permissions.\n-# Your custom messages have not been saved.`,
                             allowed_mentions: {},
