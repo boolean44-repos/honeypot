@@ -19,7 +19,7 @@ services:
          limits:
            memory: 256M
          reservations:
-           memory: 128M
+           memory: 32M
 
 volumes:
   data:
