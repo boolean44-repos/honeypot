@@ -208,16 +208,6 @@ const handler: EventHandler<GatewayDispatchEvents.InteractionCreate> = {
                         });
                         return;
                     }
-
-                    const usingChannelNameExperiment = (newConfig.experiments.includes("random-channel-name") || newConfig.experiments.includes("random-channel-name-chaos"));
-                    if (usingChannelNameExperiment && !hasPermission(BigInt(interaction.app_permissions), PermissionFlagsBits.ManageChannels)) {
-                        await api.interactions.reply(interaction.id, interaction.token, {
-                            content: `I need the Manage Channels permission to enable the "Random Channel Name" experiment.\n-# No settings have been changed.`,
-                            allowed_mentions: {},
-                            flags: MessageFlags.Ephemeral,
-                        });
-                        return;
-                    }
                     // if any other actions added in future, add their equivalent permission checks here
                 }
 
